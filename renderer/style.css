@@ -1,30 +1,44 @@
+/* Theme: follows the system unless Settings → Theme sets data-theme on <html>. */
 :root {
-  --bg: #fbfaf7;
+  --bg: #f7f9fc;
   --surface: #ffffff;
-  --text: #1f1e1c;
-  --muted: #6f6b64;
-  --line: #e7e3dc;
-  --accent: #d97757;
+  --text: #16202c;
+  --muted: #5f6b7a;
+  --line: #e1e7ef;
+  --accent: #2f7fd8;
   --accent-ink: #ffffff;
-  --user: #f1ede6;
+  --user: #e8f1fc;
   --err: #b3261e;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  --shadow: 0 10px 30px rgba(15, 35, 70, 0.18);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1f1e1c;
-    --surface: #2a2926;
-    --text: #f1eee8;
-    --muted: #a8a39a;
-    --line: #3a3834;
-    --accent: #e08a6c;
-    --accent-ink: #1f1e1c;
-    --user: #34322e;
+  :root:not([data-theme="light"]) {
+    --bg: #12161c;
+    --surface: #1b2129;
+    --text: #e8eef6;
+    --muted: #96a3b4;
+    --line: #2b3440;
+    --accent: #6cb2ff;
+    --accent-ink: #0b1b2e;
+    --user: #1f3047;
     --err: #ff8a80;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #12161c;
+  --surface: #1b2129;
+  --text: #e8eef6;
+  --muted: #96a3b4;
+  --line: #2b3440;
+  --accent: #6cb2ff;
+  --accent-ink: #0b1b2e;
+  --user: #1f3047;
+  --err: #ff8a80;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -41,7 +55,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .bubble {
   position: fixed; right: 6px; bottom: 6px;
   width: 64px; height: 64px; border-radius: 50%; border: 0;
-  background: radial-gradient(circle at 35% 30%, #f0a283, var(--accent) 60%, #b85c3e);
+  background: radial-gradient(circle at 35% 30%, #8fd0ff, var(--accent) 60%, #2766b8);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
   transition: transform 0.15s ease;
 }
@@ -54,10 +68,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 @keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
 .bubble.alert { animation: pulse 1s ease-in-out 6; }
-@keyframes pulse { 50% { transform: scale(1.12); box-shadow: 0 0 0 10px rgba(217, 119, 87, 0.25); } }
+@keyframes pulse { 50% { transform: scale(1.12); box-shadow: 0 0 0 10px rgba(47, 127, 216, 0.25); } }
 .badge {
   position: absolute; top: 2px; right: 2px; min-width: 18px; height: 18px; padding: 0 5px;
-  border-radius: 9px; background: #fff; color: #b85c3e; font-size: 11px; font-weight: 700; line-height: 18px;
+  border-radius: 9px; background: #fff; color: #2766b8; font-size: 11px; font-weight: 700; line-height: 18px;
 }
 
 /* ---------- panel ---------- */
@@ -179,11 +193,11 @@ body.browser .status { max-width: 60vw; }
 .note[data-source="youtube"] { --tint: #ffe6f0; }
 .note[data-source="calendar"] { --tint: #dcf5e3; }
 @keyframes pin { from { opacity: 0; transform: translateY(-6px) rotate(-2deg); } }
-.note input[type="checkbox"] { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: #b85c3e; cursor: pointer; }
+.note input[type="checkbox"] { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: #2f7fd8; cursor: pointer; }
 .note .body { flex: 1; min-width: 0; }
 .note .title { font-weight: 600; overflow-wrap: anywhere; }
 .note .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; font-size: 11px; color: #6b5f57; }
-.note .meta a { color: #8c3f26; font-weight: 600; text-decoration: none; }
+.note .meta a { color: #1f5fa8; font-weight: 600; text-decoration: none; }
 .note .meta a:hover { text-decoration: underline; }
 .note .notes-line { font-size: 12px; color: #5d524b; margin-top: 2px; overflow-wrap: anywhere; }
 .note .x { flex: none; border: 0; background: none; color: #8a7f76; font-size: 14px; padding: 0 2px; opacity: 0; }

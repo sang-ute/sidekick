@@ -14,6 +14,8 @@ if (!DATA) {
   console.error("SIDEKICK_DATA is not set");
   process.exit(1);
 }
+// Integrations the user switched off in settings (comma-separated, e.g. "github,youtube").
+const DISABLED = new Set((process.env.SIDEKICK_DISABLED || "").split(",").filter(Boolean));
 
 const ok = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj) }] });
 const fail = (msg) => ({ content: [{ type: "text", text: JSON.stringify({ error: msg }) }], isError: true });
@@ -82,14 +84,14 @@ server.registerTool(
 );
 
 // ---------- GitHub (read-only, user's gh login) ----------
-server.registerTool(
+if (!DISABLED.has("github")) server.registerTool(
   "github_inbox",
   { description: "The user's GitHub to-dos: PRs waiting for their review, issues assigned to them, their open PRs, unread notifications. Read-only." },
   async () => { const r = await githubInbox(); return r.error ? fail(r.error) : ok(r); },
 );
 
 // ---------- YouTube (public RSS) ----------
-server.registerTool(
+if (!DISABLED.has("youtube")) server.registerTool(
   "youtube_latest",
   { description: "New videos from the channels the user follows in Sidekick.",
     inputSchema: { since_days: z.number().min(1).max(30).optional() } },
@@ -98,7 +100,7 @@ server.registerTool(
     catch (e) { return fail(e.message); }
   },
 );
-server.registerTool(
+if (!DISABLED.has("youtube")) server.registerTool(
   "youtube_follow",
   { description: "Follow (or unfollow) a YouTube channel by @handle, channel URL or channel id.",
     inputSchema: { channel: z.string(), unfollow: z.boolean().optional() } },

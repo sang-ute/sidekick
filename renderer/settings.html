@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'" />
+  <title>Sidekick Settings</title>
+  <link rel="icon" href="/icon.png" />
+  <link rel="stylesheet" href="/settings.css" />
+</head>
+<body class="loading">
+  <header class="titlebar">
+    <div class="brand">
+      <svg class="sparkle" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 1 Q13.7 10.3 23 12 Q13.7 13.7 12 23 Q10.3 13.7 1 12 Q10.3 10.3 12 1Z" />
+      </svg>
+      <span>Sidekick settings</span>
+    </div>
+    <span id="conn" class="conn" role="status" aria-live="polite"></span>
+    <button id="btnClose" class="win-close" type="button" aria-label="Close settings" title="Close (Esc)">✕</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+      <button type="button" role="tab" id="tab-general" aria-controls="panel-general" data-tab="general"><span aria-hidden="true">⚙️</span> General</button>
+      <button type="button" role="tab" id="tab-ai" aria-controls="panel-ai" data-tab="ai"><span aria-hidden="true">✨</span> AI &amp; account</button>
+      <button type="button" role="tab" id="tab-connections" aria-controls="panel-connections" data-tab="connections"><span aria-hidden="true">🔌</span> Connections</button>
+      <button type="button" role="tab" id="tab-mascot" aria-controls="panel-mascot" data-tab="mascot"><span aria-hidden="true">🫧</span> Mascot &amp; alerts</button>
+      <button type="button" role="tab" id="tab-about" aria-controls="panel-about" data-tab="about"><span aria-hidden="true">ℹ️</span> About</button>
+    </nav>
+
+    <main class="content" id="content">
+      <div id="loadError" class="banner err" role="alert" hidden></div>
+
+      <!-- ===================== General ===================== -->
+      <section id="panel-general" class="panel" role="tabpanel" aria-labelledby="tab-general" tabindex="0" hidden>
+        <h1>General</h1>
+        <p class="lede">How Sidekick looks and starts.</p>
+
+        <div class="card">
+          <div class="row">
+            <div class="label"><span id="lbl-theme">Theme</span><small>Follow Windows, or pick one.</small></div>
+            <div id="segTheme" class="seg" aria-labelledby="lbl-theme"></div>
+          </div>
+          <div class="row">
+            <label class="label" for="openAtLogin">Start with Windows<small>Open Sidekick when you sign in to your PC.</small></label>
+            <label class="switch"><input type="checkbox" id="openAtLogin" /><span></span></label>
+          </div>
+          <div class="row">
+            <label class="label" for="shortcut">Keyboard shortcut<small>Opens and closes the chat from anywhere.</small></label>
+            <div class="field">
+              <input id="shortcut" class="input mono" spellcheck="false" autocomplete="off" placeholder="Control+Shift+Space" aria-describedby="shortcutErr" />
+              <small id="shortcutErr" class="field-err" hidden>Use modifiers and a key, like Control+Shift+Space.</small>
+            </div>
+          </div>
+        </div>
+
+        <h2>Daily sync</h2>
+        <div class="card">
+          <div class="row">
+            <label class="label" for="syncOn">Sync every day<small>Checks GitHub, Gmail and YouTube and pins new to-dos. If the PC was off at that time, it runs right after you sign in.</small></label>
+            <label class="switch"><input type="checkbox" id="syncOn" /><span></span></label>
+          </div>
+          <div class="row" id="syncTimeRow">
+            <label class="label" for="syncTime">Time<small>Your local time.</small></label>
+            <input type="time" id="syncTime" class="input narrow" />
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== AI & account ===================== -->
+      <section id="panel-ai" class="panel" role="tabpanel" aria-labelledby="tab-ai" tabindex="0" hidden>
+        <h1>AI &amp; account</h1>
+        <p class="lede">Sidekick runs on your Claude Code. Pick the account, the model and how it answers.</p>
+
+        <div class="card account" id="accountCard" aria-busy="true">
+          <div class="account-head">
+            <span id="acctDot" class="big-dot" aria-hidden="true"></span>
+            <div class="account-id">
+              <div id="acctTitle" class="acct-title">Checking Claude Code…</div>
+              <div id="acctSub" class="muted small"></div>
+            </div>
+            <button id="btnRefreshInfo" type="button" class="btn ghost small">↻ Refresh</button>
+          </div>
+          <dl id="acctDetails" class="details"></dl>
+          <div class="btn-row">
+            <button id="btnLoginClaude" type="button" class="btn primary">Sign in with Claude subscription</button>
+            <button id="btnLoginConsole" type="button" class="btn">Sign in with Anthropic Console (API billing)</button>
+            <button id="btnLogout" type="button" class="btn danger">Sign out</button>
+          </div>
+          <p class="hint">Signing in opens a terminal and a browser window. Finish there, then press Refresh.</p>
+        </div>
+        <p class="fine">Sidekick runs on Claude Code, so other AI providers (OpenAI, Gemini…) aren't supported. Amazon Bedrock, Google Vertex AI and Microsoft Foundry work through Claude Code's own environment settings.</p>
+
+        <h2>Model &amp; answers</h2>
+        <div class="card">
+          <div class="row stack">
+            <label class="label" for="model">Model</label>
+            <select id="model" class="input"></select>
+            <small id="modelNote" class="hint"></small>
+          </div>
+          <div class="row stack">
+            <div class="label"><span id="lbl-effort">Effort</span><small>How hard Claude thinks before answering. Higher is slower and uses more of your plan.</small></div>
+            <div id="segEffort" class="seg" aria-labelledby="lbl-effort"></div>
+            <small id="effortHint" class="hint"></small>
+          </div>
+          <div class="row stack">
+            <div class="label"><span id="lbl-style">Response style</span></div>
+            <div id="segStyle" class="seg" aria-labelledby="lbl-style"></div>
+            <small id="styleHint" class="hint"></small>
+          </div>
+          <div class="row">
+            <label class="label" for="language">Reply language<small>Leave empty to match the language you write in.</small></label>
+            <input id="language" class="input" autocomplete="off" placeholder="Match my language" maxlength="40" />
+          </div>
+        </div>
+        <div class="restart-note">
+          <span>↻ Claude Code restarts when you change these.</span>
+          <button id="btnRestart" type="button" class="btn small">Restart Claude Code</button>
+        </div>
+      </section>
+
+      <!-- ===================== Connections ===================== -->
+      <section id="panel-connections" class="panel" role="tabpanel" aria-labelledby="tab-connections" tabindex="0" hidden>
+        <h1>Connections</h1>
+        <p class="lede">What Sidekick can reach. It never sends, deletes or changes anything unless you ask in the chat.</p>
+
+        <h2>Built-in tools</h2>
+        <div class="card list" id="builtinList"></div>
+
+        <h2>claude.ai connectors &amp; MCP servers</h2>
+        <p class="sub">Loaded by Claude Code from your account and settings.</p>
+        <div class="card list" id="connectorList"></div>
+
+        <h2>Custom MCP servers</h2>
+        <p class="sub">Extra servers that only Sidekick's Claude Code uses.</p>
+        <div class="card list" id="mcpList"></div>
+        <details class="card add" id="addMcp">
+          <summary>＋ Add server</summary>
+          <form id="mcpForm" class="form" novalidate>
+            <div class="grid2">
+              <label class="f">Name
+                <input id="mcpName" class="input mono" autocomplete="off" spellcheck="false" placeholder="notion" maxlength="40" required />
+              </label>
+              <fieldset class="f">
+                <legend>Type</legend>
+                <div class="seg radios">
+                  <label><input type="radio" name="mcpType" value="stdio" checked /><span>Command (stdio)</span></label>
+                  <label><input type="radio" name="mcpType" value="http" /><span>URL (HTTP)</span></label>
+                </div>
+              </fieldset>
+            </div>
+            <div id="stdioFields">
+              <label class="f">Command
+                <input id="mcpCommand" class="input mono" autocomplete="off" spellcheck="false" placeholder="npx" />
+              </label>
+              <label class="f">Arguments <small>space-separated, use quotes for spaces</small>
+                <input id="mcpArgs" class="input mono" autocomplete="off" spellcheck="false" placeholder='-y @modelcontextprotocol/server-filesystem "C:\Users\me\Notes"' />
+              </label>
+            </div>
+            <div id="httpFields" hidden>
+              <label class="f">URL
+                <input id="mcpUrl" class="input mono" autocomplete="off" spellcheck="false" placeholder="https://example.com/mcp" />
+              </label>
+            </div>
+            <label class="f"><span id="mcpKVLabel">Environment variables</span> <small id="mcpKVHint">optional, KEY=VALUE, one per line</small>
+              <textarea id="mcpKV" class="input mono" rows="3" spellcheck="false"></textarea>
+            </label>
+            <label class="check"><input type="checkbox" id="mcpAuto" /> Auto-approve its tools <small>(Claude can use them without asking)</small></label>
+            <p id="mcpErr" class="field-err" role="alert" hidden></p>
+            <div class="btn-row"><button type="submit" class="btn primary">Add server</button></div>
+          </form>
+        </details>
+
+        <h2>YouTube channels</h2>
+        <div class="card pad">
+          <p class="sub tight">Sidekick checks these for new videos when it syncs.</p>
+          <div id="ytChips" class="chips" aria-label="Followed channels"></div>
+          <form id="ytForm" class="chip-add">
+            <input id="ytInput" class="input" autocomplete="off" spellcheck="false" placeholder="@channel or channel URL" aria-label="Add a YouTube channel" />
+            <button type="submit" class="btn">Add</button>
+          </form>
+        </div>
+
+        <h2>Advanced</h2>
+        <div class="card pad">
+          <div class="label">Auto-approved tools<small>Tools Claude may use without asking, e.g. <code>mcp__notion</code>. Built-in Sidekick tools, web search and your Gmail/Calendar connectors are already allowed.</small></div>
+          <div id="toolChips" class="chips" aria-label="Auto-approved tools"></div>
+          <form id="toolForm" class="chip-add">
+            <input id="toolInput" class="input mono" autocomplete="off" spellcheck="false" placeholder="mcp__server or mcp__server__tool" aria-label="Add an auto-approved tool" />
+            <button type="submit" class="btn">Add</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ===================== Mascot ===================== -->
+      <section id="panel-mascot" class="panel" role="tabpanel" aria-labelledby="tab-mascot" tabindex="0" hidden>
+        <h1>Mascot &amp; alerts</h1>
+        <p class="lede">Your little desktop buddy and its notifier bubble.</p>
+
+        <div class="card">
+          <div class="row">
+            <label class="label" for="mascotVisible">Show mascot<small>Hide it to keep only the tray icon.</small></label>
+            <label class="switch"><input type="checkbox" id="mascotVisible" /><span></span></label>
+          </div>
+          <div class="row">
+            <div class="label"><span id="lbl-size">Size</span></div>
+            <div id="segSize" class="seg" aria-labelledby="lbl-size"></div>
+          </div>
+          <div class="row">
+            <label class="label" for="sleepAfter">Nap after<small>Minutes of quiet before it dozes off. 0 = never.</small></label>
+            <div class="suffix"><input type="number" id="sleepAfter" class="input narrow" min="0" max="240" step="1" /><span>min</span></div>
+          </div>
+        </div>
+
+        <h2>Notifier</h2>
+        <div class="card">
+          <div class="row">
+            <label class="label" for="notifierAuto">Pop up on new alerts<small>Reminders, sync results and new tasks show in a bubble next to the mascot.</small></label>
+            <label class="switch"><input type="checkbox" id="notifierAuto" /><span></span></label>
+          </div>
+          <div class="row">
+            <label class="label" for="notifierHide">Hide the bubble after<small>It stays open while your mouse is over it.</small></label>
+            <div class="suffix"><input type="number" id="notifierHide" class="input narrow" min="3" max="120" step="1" /><span>sec</span></div>
+          </div>
+        </div>
+
+        <div class="card tip">
+          <span class="tip-ic" aria-hidden="true">🎨</span>
+          <div>
+            <div class="label">Custom look<small>Put an image named <code>mascot.png</code>, <code>mascot.gif</code> or <code>mascot.webp</code> (about 120×120, transparent background) in the data folder, then restart Sidekick.</small></div>
+            <button type="button" class="btn small" data-open="dataFolder">Open data folder</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== About ===================== -->
+      <section id="panel-about" class="panel" role="tabpanel" aria-labelledby="tab-about" tabindex="0" hidden>
+        <div class="hero">
+          <svg class="hero-mark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 1 Q13.7 10.3 23 12 Q13.7 13.7 12 23 Q10.3 13.7 1 12 Q10.3 10.3 12 1Z" />
+          </svg>
+          <div>
+            <h1 id="aboutName">Sidekick</h1>
+            <p id="aboutVersion" class="muted">Version …</p>
+          </div>
+        </div>
+        <p class="lede">A desktop companion that runs on your own Claude Code login.</p>
+        <div class="card">
+          <dl id="aboutList" class="details wide"></dl>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn" data-open="dataFolder">Open data folder</button>
+          <button id="btnCopyDiag" type="button" class="btn">Copy diagnostics</button>
+        </div>
+        <p class="fine">Diagnostics include versions, statuses and settings, but no email address or account names.</p>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/settings.js"></script>
+</body>
+</html>

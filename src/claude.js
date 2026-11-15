@@ -8,25 +8,60 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SYSTEM = `You are Sidekick, a small personal assistant who lives on the user's Windows desktop as a little mascot, running on Claude Code.
-Be warm, brief and practical: replies show in a small chat panel, so prefer a few short lines and simple formatting.
+const STYLE = {
+  brief: "Keep replies to one to three short lines unless the user asks for more.",
+  balanced: "Be brief by default: a few short lines, with more detail only when it helps.",
+  detailed: "Give complete answers: explain your reasoning and list steps when useful, still using simple formatting.",
+};
 
-Your tools (sidekick MCP server):
-- Reminders: create_reminder / list_reminders / delete_reminder. They fire as desktop notifications at the exact time. Resolve relative times ("in 20 minutes", "Friday morning") against the [now: ...] tag and confirm the exact date and time.
-- Task board: add_task / list_tasks / complete_task / delete_task. The board is pinned in the app. Use it for things the user needs to act on.
-- GitHub: github_inbox (read-only, via the user's gh login).
-- YouTube: youtube_latest, youtube_follow.
-- Gmail / Google Calendar: claude.ai connectors, when the user has connected them. If a connector's tools aren't available, say it needs connecting at claude.ai → Settings → Connectors.
+/** The system prompt, built from what the user has switched on in settings. */
+function buildSystemPrompt(cfg) {
+  const on = cfg.integrations || {};
+  const tools = [
+    "- Reminders: create_reminder / list_reminders / delete_reminder. They fire as desktop notifications at the exact time. Resolve relative times (\"in 20 minutes\", \"Friday morning\") against the [now: ...] tag and confirm the exact date and time.",
+    "- Task board: add_task / list_tasks / complete_task / delete_task. The board is pinned in the app. Use it for things the user needs to act on.",
+  ];
+  if (on.github) tools.push("- GitHub: github_inbox (read-only, via the user's gh login).");
+  if (on.youtube) tools.push("- YouTube: youtube_latest, youtube_follow.");
+  const google = [on.gmail && "Gmail", on.calendar && "Google Calendar"].filter(Boolean);
+  if (google.length) {
+    tools.push(`- ${google.join(" / ")}: claude.ai connectors, when the user has connected them. If a connector's tools aren't available, say it needs connecting at claude.ai → Settings → Connectors (or in Sidekick settings → Connections).`);
+  }
+  if (on.web) tools.push("- Web search and page reading for fresh information.");
+  const custom = Object.keys(cfg.mcpServers || {});
+  if (custom.length) tools.push(`- The user's own MCP servers: ${custom.join(", ")}.`);
 
-When asked to sync or check what's new:
-1. list_tasks first so you don't add duplicates.
-2. github_inbox: add a task for each PR waiting for their review and each assigned issue (source github, with link). Notifications can be stale (a failed CI run may already be fixed by a later run), so mention them as "worth a look", not as emergencies.
-3. Gmail (if connected): search recent unread mail in the inbox; add a task only for mail that needs a reply or action (source gmail, with link if you have one). Skip newsletters, promotions and notifications.
-4. youtube_latest: add one task per new video worth watching (source youtube, with link).
-5. Reply with a 2-4 line summary: what's new and the most important thing to do first.
+  const sync = ["1. list_tasks first so you don't add duplicates."];
+  if (on.github) sync.push("- github_inbox: add a task for each PR waiting for their review and each assigned issue (source github, with link). Notifications can be stale (a failed CI run may already be fixed by a later run), so mention them as \"worth a look\", not as emergencies.");
+  if (on.gmail) sync.push("- Gmail (if connected): search recent unread mail in the inbox; add a task only for mail that needs a reply or action (source gmail, with link if you have one). Skip newsletters, promotions and notifications.");
+  if (on.calendar) sync.push("- Google Calendar (if connected): note today's and tomorrow's events; add a task only when something needs preparing (source calendar).");
+  if (on.youtube) sync.push("- youtube_latest: add one task per new video worth watching (source youtube, with link).");
+  sync.push("- Finish with a 2-4 line summary: what's new and the most important thing to do first.");
 
-Never send, delete, archive or modify emails, issues or anything else on the user's behalf unless they ask in this chat. Drafts are fine when asked.
-Every user message starts with a [now: ...] tag added by the app, not typed by the user. Never mention the tag.`;
+  return [
+    "You are Sidekick, a small personal assistant who lives on the user's Windows desktop as a little blue mascot, running on Claude Code.",
+    `Replies show in a small chat panel, so use simple formatting. ${STYLE[cfg.responseStyle] || STYLE.balanced}`,
+    cfg.language ? `Always reply in ${cfg.language}.` : "Reply in the language the user writes in.",
+    "",
+    "Your tools:",
+    ...tools,
+    "",
+    "When asked to sync or check what's new:",
+    ...sync,
+    "",
+    "Never send, delete, archive or modify emails, issues or anything else on the user's behalf unless they ask in this chat. Drafts are fine when asked.",
+    "Every user message starts with a [now: ...] tag added by the app, not typed by the user. Never mention the tag.",
+  ].join("\n");
+}
+
+/** Environment for child processes, without markers that would confuse them. */
+function cleanEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.CLAUDECODE; // don't look like a nested session if launched from a Claude Code terminal
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+  return env;
+}
 
 function findClaude() {
   if (process.env.SIDEKICK_CLAUDE_PATH) return process.env.SIDEKICK_CLAUDE_PATH;
@@ -71,52 +106,58 @@ class ClaudeSession extends EventEmitter {
   }
 
   writeMcpConfig() {
-    const mcp = {
-      mcpServers: {
-        sidekick: {
-          command: process.execPath, // node, or electron.exe acting as node
-          args: [path.join(__dirname, "mcp-sidekick.js")],
-          env: { ELECTRON_RUN_AS_NODE: "1", SIDEKICK_DATA: this.dataDir },
-        },
+    const on = this.config.integrations || {};
+    const disabled = ["github", "youtube"].filter((k) => !on[k]);
+    const servers = {
+      sidekick: {
+        command: process.execPath, // node, or Sidekick.exe acting as node
+        args: [path.join(__dirname, "mcp-sidekick.js")],
+        env: { ELECTRON_RUN_AS_NODE: "1", SIDEKICK_DATA: this.dataDir, SIDEKICK_DISABLED: disabled.join(",") },
       },
     };
+    // The user's own servers from settings.
+    for (const [name, s] of Object.entries(this.config.mcpServers || {})) {
+      servers[name] = s.type === "http"
+        ? { type: "http", url: s.url, headers: s.headers || {} }
+        : { type: "stdio", command: s.command, args: s.args || [], env: s.env || {} };
+    }
     fs.mkdirSync(this.workDir, { recursive: true });
-    fs.writeFileSync(this.mcpFile, JSON.stringify(mcp, null, 2));
+    fs.writeFileSync(this.mcpFile, JSON.stringify({ mcpServers: servers }, null, 2));
   }
 
   start() {
     if (this.proc) return;
     if (!this.claudePath) throw new Error("Claude Code isn't installed (couldn't find `claude`).");
     this.writeMcpConfig();
+    const on = this.config.integrations || {};
+    // claude.ai connectors only work once connected on claude.ai. The system prompt
+    // forbids sending/deleting anything unless the user asks in the chat.
+    const connectors = { gmail: "mcp__claude_ai_Gmail", calendar: "mcp__claude_ai_Google_Calendar" };
     const allowed = [
-      "mcp__sidekick", "WebSearch", "WebFetch",
-      // claude.ai connectors (only work once connected on claude.ai). The system prompt
-      // forbids sending/deleting anything unless the user asks in the chat.
-      "mcp__claude_ai_Gmail", "mcp__claude_ai_Google_Calendar",
+      "mcp__sidekick",
+      ...(on.web ? ["WebSearch", "WebFetch"] : []),
+      ...Object.entries(connectors).filter(([k]) => on[k]).map(([, t]) => t),
       ...(this.config.extraAllowedTools || []),
     ];
+    const blocked = Object.entries(connectors).filter(([k]) => !on[k]).map(([, t]) => t);
     const args = [
       "-p",
       "--input-format", "stream-json",
       "--output-format", "stream-json",
       "--verbose",
       "--include-partial-messages",
-      "--append-system-prompt", SYSTEM,
+      "--append-system-prompt", buildSystemPrompt(this.config),
       "--mcp-config", this.mcpFile,
-      "--tools", "WebSearch,WebFetch", // no shell or file editing from the bubble
+      "--tools", on.web ? "WebSearch,WebFetch" : "", // never shell or file editing from the mascot
       "--allowedTools", allowed.join(","),
       "--effort", this.config.effort || "low",
     ];
+    if (blocked.length) args.push("--disallowedTools", blocked.join(","));
     if (this.config.model) args.push("--model", this.config.model);
     if (this.sessionId) args.push("--resume", this.sessionId);
 
-    const env = { ...process.env };
-    delete env.ELECTRON_RUN_AS_NODE;
-    delete env.CLAUDECODE; // don't look like a nested session if launched from a Claude Code terminal
-    delete env.CLAUDE_CODE_ENTRYPOINT;
-
     this.emit("status", { state: "starting" });
-    const proc = spawn(this.claudePath, args, { cwd: this.workDir, env, windowsHide: true });
+    const proc = spawn(this.claudePath, args, { cwd: this.workDir, env: cleanEnv(), windowsHide: true });
     this.proc = proc;
     this.buf = "";
     let stderr = "";
@@ -171,7 +212,7 @@ class ClaudeSession extends EventEmitter {
       this.busy = false;
       const denied = (m.permission_denials || []).map((d) => d.tool_name);
       if (denied.length) {
-        this.emit("note", `Not allowed to use: ${[...new Set(denied)].join(", ")}. Add it to "extraAllowedTools" in config.json to allow it.`);
+        this.emit("note", `Not allowed to use: ${[...new Set(denied)].join(", ")}. You can allow it in Settings → Connections → Auto-approved tools.`);
       }
       if (m.is_error) this.emit("error", typeof m.result === "string" ? m.result : `Claude Code error (${m.subtype})`);
       else this.emit("done");
@@ -208,6 +249,15 @@ class ClaudeSession extends EventEmitter {
     this.stop();
     this.sessionId = null;
   }
+
+  /** Apply new settings: restart Claude Code, keeping the conversation (--resume). */
+  restart(config) {
+    if (config) this.config = config;
+    const wasBusy = this.busy;
+    this.stop();
+    if (wasBusy) this.emit("error", "Restarted Claude Code with your new settings. Please send that again.");
+    if (this.ready) { try { this.start(); } catch {} }
+  }
 }
 
-module.exports = { ClaudeSession };
+module.exports = { ClaudeSession, findClaude, cleanEnv };

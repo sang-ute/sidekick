@@ -53,6 +53,17 @@ function showView(name) {
   if (name === "rem") renderReminders();
 }
 
+$("btnSettings").addEventListener("click", () => {
+  if (shellApi) shellApi.openSettings();
+  else window.open(`/settings#t=${encodeURIComponent(TOKEN)}`, "_blank");
+});
+
+// Theme from Settings ("system" follows Windows).
+function applyTheme(cfg) {
+  if (cfg && (cfg.theme === "light" || cfg.theme === "dark")) document.documentElement.dataset.theme = cfg.theme;
+  else delete document.documentElement.dataset.theme;
+}
+
 $("tabTasks").addEventListener("click", () => showView("tasks"));
 $("tabChat").addEventListener("click", () => showView("chat"));
 $("btnClose").addEventListener("click", () => shellApi?.closePanel());
@@ -180,7 +191,8 @@ function renderStatus(s) {
 function connect() {
   const es = new EventSource(`/api/events?t=${encodeURIComponent(TOKEN)}`);
   es.addEventListener("hello", (e) => {
-    const { status, history, tasks } = JSON.parse(e.data);
+    const { status, history, tasks, config } = JSON.parse(e.data);
+    applyTheme(config);
     greet();
     current = null;
     setBusy(false);
@@ -189,6 +201,7 @@ function connect() {
     renderTasks(tasks || []);
   });
   es.addEventListener("tasks", (e) => renderTasks(JSON.parse(e.data)));
+  es.addEventListener("config", (e) => applyTheme(JSON.parse(e.data)));
   for (const t of ["user", "delta", "tool", "note", "done", "failure", "reminder"]) {
     es.addEventListener(t, (e) => apply(t, JSON.parse(e.data), true));
   }

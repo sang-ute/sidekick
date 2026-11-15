@@ -1,5 +1,5 @@
-// Only window controls cross this bridge. Chat goes to the local server over HTTP,
-// so the same UI also works in a normal browser tab.
+// Only window controls cross this bridge. Chat and settings go to the local server over
+// HTTP, so the same UI also works in a normal browser tab.
 const { contextBridge, ipcRenderer } = require("electron");
 
 const on = (channel) => (fn) => ipcRenderer.on(channel, (_e, v) => fn(v));
@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("sidekickShell", {
   openPanel: () => ipcRenderer.send("panel:open"),
   closePanel: () => ipcRenderer.send("panel:close"),
   onPanel: on("panel:state"),
+  // settings window
+  openSettings: () => ipcRenderer.send("settings:open"),
+  closeSettings: () => ipcRenderer.send("settings:close"),
   // mascot
   dragStart: () => ipcRenderer.send("pet:dragStart"),
   dragMove: (dx, dy) => ipcRenderer.send("pet:dragMove", Number(dx), Number(dy)),

@@ -1,9 +1,9 @@
 # Sidekick
 
 A cute desktop companion for Windows that runs on **your own Claude Code login** (Pro/Max plan).
-No API key. A little coral mascot lives on your screen: it blinks, watches your cursor, hops around,
-naps when you're away, thinks while Claude works, and jumps up with a speech bubble when a reminder
-is due. Click it to chat.
+No API key. A little blue mascot lives on your screen: it blinks, watches your cursor, hops around,
+naps when you're away, thinks while Claude works, sends out signal waves while it fetches your data,
+and rings a bell when a reminder is due. Click it to chat.
 
 ## Install
 
@@ -17,8 +17,27 @@ Requirement: Claude Code installed and signed in (run `claude` in a terminal onc
 
 - **Click the mascot** to open or close the chat. **Drag** it anywhere. **Right-click** it for the menu.
 - **Ctrl+Shift+Space** toggles the chat from anywhere; **Esc** closes it.
-- When the chat is closed, answers and reminders pop up in the mascot's speech bubble.
 - Try: *"remind me in 2 minutes to drink water"*, *"every weekday at 9 remind me to check job boards"*.
+
+## Notifier
+
+A chat-bubble mini dashboard above the mascot. It pops up when something happens (a reminder fires,
+a sync finishes, Claude pins a new task) and when you hover the mascot. It shows your open tasks, the
+next reminder and the last sync, plus a list of recent notifications you can open or dismiss.
+
+## Settings
+
+Click ⚙ (chat window or notifier), or right-click the mascot → **Settings…**
+
+| Tab | What's there |
+|---|---|
+| General | Theme (system / light / dark), start with Windows, keyboard shortcut, daily sync time |
+| AI & Account | Claude Code sign-in (Claude subscription or Anthropic Console), model, effort, response style, reply language |
+| Connections | GitHub / YouTube / Gmail / Calendar / web on-off, claude.ai connectors (authorize), your own MCP servers, auto-approved tools, YouTube channels |
+| Mascot & notifications | Show/hide, size, nap timer, notifier behaviour, custom mascot image |
+| About | Versions, Claude Code path, data folder, copy diagnostics |
+
+Sidekick runs on Claude Code, so it uses Claude models only.
 
 ## Task board
 
@@ -68,19 +87,11 @@ Windows login
 - Claude Code gets only WebSearch and WebFetch as built-in tools: no shell, no file edits. Connector
   tools are blocked until you allow them in the config.
 
-## Config
+## Config file
 
-`%APPDATA%\Sidekick\config.json` (right-click mascot → Open data folder):
-
-| Key | Default | Meaning |
-|---|---|---|
-| `effort` | `"low"` | Claude Code effort level (`low` is snappy; `medium`/`high` think harder) |
-| `model` | `null` | Model override, e.g. `"sonnet"`; `null` uses your Claude Code default |
-| `extraAllowedTools` | `[]` | Extra tools Claude may use without asking |
-| `dailySyncTime` | `"08:30"` | Daily sync time (local, HH:MM), or `null` to turn it off |
-| `youtubeChannels` | `[]` | Channels to watch (`@handle`, URL or channel id) |
-
-Restart Sidekick (right-click → Quit, then open it from the Start menu) after editing.
+Everything in Settings is saved to `%APPDATA%\Sidekick\config.json` and applied right away
+(changes to model, effort, style, language, tools or MCP servers restart Claude Code, keeping the chat).
+Editing the file by hand also works; Sidekick picks the change up within a couple of seconds.
 
 ## Develop
 
@@ -93,19 +104,21 @@ npm run dist       # build the installer into dist/
 
 | File | Role |
 |---|---|
-| `src/main.js` | Electron shell: mascot + chat windows, tray, shortcut, notifications, launch at login |
-| `src/server.js` | Local HTTP server + live event stream + reminder scheduler |
+| `src/main.js` | Electron shell: mascot, chat and settings windows, tray, shortcut, theme, launch at login |
+| `src/server.js` | Local HTTP server: live event stream, settings, notifications, reminder scheduler, sync |
+| `src/config.js` | Settings defaults, choices and validation |
 | `src/claude.js` | Runs and talks to the Claude Code CLI (`stream-json` mode) |
 | `src/mcp-sidekick.js` | MCP tool server Claude Code launches: reminders, tasks, GitHub, YouTube |
 | `src/tasks.js` | Task board storage |
 | `src/integrations.js` | GitHub (via `gh`) and YouTube (RSS) readers |
 | `src/reminders.js` | Reminder storage shared by the two above |
-| `renderer/mascot.*` | The desktop mascot (SVG + CSS animations, moods) |
-| `renderer/index.html`, `app.js` | Chat UI, works in the app and in a browser tab |
+| `renderer/mascot.*` | The desktop mascot (SVG + CSS animations, moods) and the notifier |
+| `renderer/index.html`, `app.js` | Chat + task board UI, works in the app and in a browser tab |
+| `renderer/settings.*` | Settings dashboard |
 
 ## Roadmap
 
 - [ ] Smarter heartbeat: nudge during the day only when something urgent arrives
-- [ ] Approve or deny tool use from the chat instead of a config file
+- [ ] Approve or deny a tool the moment Claude asks for it
 - [ ] Telegram channel to message it from your phone
 - [ ] More mascot moods and outfits
