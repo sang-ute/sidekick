@@ -1,5 +1,5 @@
 // Electron shell: starts the local server (which connects Claude Code), shows the
-// floating bubble, tray icon, global shortcut, native notifications, launch at login.
+// desktop mascot and the chat window, tray icon, shortcut, notifications, autostart.
 const fs = require("fs");
 const path = require("path");
 const {
@@ -7,111 +7,150 @@ const {
 } = require("electron");
 const { startServer } = require("./server");
 
-const BUBBLE = { width: 76, height: 76 };
+const PET = { width: 230, height: 240 }; // pet + room for its speech bubble
 const PANEL = { width: 380, height: 580 };
-const MARGIN = 16;
 const ICON = path.join(__dirname, "..", "assets", "icon.png");
 
-let win = null;
+let pet = null;
+let panel = null;
 let tray = null;
 let srv = null;
-let expanded = false;
+let dragOrigin = null;
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
-app.setAppUserModelId("com.sidekick.assistant"); // required for Windows toast notifications
+app.setAppUserModelId("com.sidekick.assistant"); // needed for Windows toast notifications
 
-// ---------- shell settings (window position, autostart) ----------
+// ---------- shell settings ----------
 const shellFile = () => path.join(app.getPath("userData"), "shell.json");
+const DEFAULTS = { openAtLogin: true, petPos: null, petVisible: true };
 function getShell() {
-  try { return { openAtLogin: true, bounds: null, ...JSON.parse(fs.readFileSync(shellFile(), "utf8")) }; }
-  catch { return { openAtLogin: true, bounds: null }; }
+  try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(shellFile(), "utf8")) }; }
+  catch { return { ...DEFAULTS }; }
 }
 function setShell(patch) {
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
   fs.writeFileSync(shellFile(), JSON.stringify({ ...getShell(), ...patch }, null, 2));
 }
 
-// ---------- window ----------
-// The bottom-right corner is the anchor: the bubble sits there, the panel grows up-left from it.
-function anchor() {
-  const saved = getShell().bounds;
-  const wa = screen.getPrimaryDisplay().workArea;
-  if (saved && saved.right <= wa.x + wa.width + 50 && saved.bottom <= wa.y + wa.height + 50) return saved;
-  return { right: wa.x + wa.width - MARGIN, bottom: wa.y + wa.height - MARGIN };
-}
-function boundsFor(size) {
-  const { right, bottom } = anchor();
-  return { x: right - size.width, y: bottom - size.height, ...size };
-}
+const webPreferences = {
+  preload: path.join(__dirname, "preload.js"),
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+};
 
-function createWindow(url) {
-  win = new BrowserWindow({
-    ...boundsFor(BUBBLE),
-    frame: false,
-    transparent: true,
-    resizable: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false,
-    icon: ICON,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  win.setAlwaysOnTop(true, "floating");
-  win.loadURL(url);
-  win.once("ready-to-show", () => win.showInactive());
-  // Links Claude writes open in the real browser, never inside the bubble.
-  win.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (/^https?:\/\//.test(target)) shell.openExternal(target);
+function lockDown(win) {
+  // Links open in the real browser; the windows never navigate away from the local UI.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
     return { action: "deny" };
   });
-  win.webContents.on("will-navigate", (e, target) => {
-    if (!target.startsWith(`http://127.0.0.1:${srv.port}/`)) e.preventDefault();
-  });
-  win.on("moved", () => {
-    const b = win.getBounds();
-    setShell({ bounds: { right: b.x + b.width, bottom: b.y + b.height } });
+  win.webContents.on("will-navigate", (e, url) => {
+    if (!url.startsWith(`http://127.0.0.1:${srv.port}/`)) e.preventDefault();
   });
 }
 
-function setExpanded(next) {
-  expanded = next;
-  if (!win.isVisible()) win.showInactive();
-  win.setBounds(boundsFor(expanded ? PANEL : BUBBLE));
-  win.webContents.send("shell:expanded", expanded);
-  if (expanded) win.focus();
+// ---------- mascot window ----------
+function petStartPos() {
+  const saved = getShell().petPos;
+  if (saved) {
+    const wa = screen.getDisplayNearestPoint(saved).workArea;
+    const onScreen = saved.x > wa.x - PET.width / 2 && saved.x < wa.x + wa.width - PET.width / 2 &&
+      saved.y > wa.y - PET.height / 2 && saved.y < wa.y + wa.height - PET.height / 2;
+    if (onScreen) return saved;
+  }
+  const wa = screen.getPrimaryDisplay().workArea;
+  return { x: wa.x + wa.width - PET.width - 10, y: wa.y + wa.height - PET.height };
 }
-const toggle = () => setExpanded(!expanded);
 
-// ---------- tray ----------
-function trayMenu() {
-  return Menu.buildFromTemplate([
-    { label: "Open Sidekick", click: () => setExpanded(true) },
+function createPet() {
+  pet = new BrowserWindow({
+    ...petStartPos(), ...PET,
+    frame: false, transparent: true, resizable: false, alwaysOnTop: true,
+    skipTaskbar: true, hasShadow: false, focusable: false, show: false,
+    icon: ICON, webPreferences,
+  });
+  pet.setAlwaysOnTop(true, "floating");
+  pet.setIgnoreMouseEvents(true, { forward: true }); // clicks pass through except on the pet itself
+  pet.loadURL(`http://127.0.0.1:${srv.port}/mascot#t=${srv.token}`);
+  pet.once("ready-to-show", () => { if (getShell().petVisible) pet.showInactive(); });
+  lockDown(pet);
+}
+
+// Eyes follow the cursor: send its offset from the pet's face ~12 times a second.
+let lastCursor = "";
+setInterval(() => {
+  if (!pet || pet.isDestroyed() || !pet.isVisible()) return;
+  const p = screen.getCursorScreenPoint();
+  const b = pet.getBounds();
+  const msg = { dx: p.x - (b.x + b.width / 2), dy: p.y - (b.y + b.height - 66) };
+  const key = `${msg.dx},${msg.dy}`;
+  if (key !== lastCursor) { lastCursor = key; pet.webContents.send("pet:cursor", msg); }
+}, 80);
+
+// ---------- chat window ----------
+function createPanel() {
+  panel = new BrowserWindow({
+    ...PANEL,
+    frame: false, transparent: true, resizable: false, alwaysOnTop: true,
+    skipTaskbar: true, hasShadow: false, show: false,
+    icon: ICON, webPreferences,
+  });
+  panel.setAlwaysOnTop(true, "floating");
+  panel.loadURL(`http://127.0.0.1:${srv.port}/#t=${srv.token}`);
+  panel.on("show", () => broadcastPanel(true));
+  panel.on("hide", () => broadcastPanel(false));
+  lockDown(panel);
+}
+
+function broadcastPanel(open) {
+  for (const w of [pet, panel]) if (w && !w.isDestroyed()) w.webContents.send("panel:state", open);
+}
+
+// Put the chat beside the pet (left if there's room, else right), inside the screen.
+function placePanel() {
+  const b = pet.getBounds();
+  const wa = screen.getDisplayMatching(b).workArea;
+  let x = b.x - PANEL.width + 30;
+  if (x < wa.x) x = b.x + b.width - 30;
+  x = Math.max(wa.x, Math.min(x, wa.x + wa.width - PANEL.width));
+  const y = Math.max(wa.y, Math.min(b.y + b.height - PANEL.height, wa.y + wa.height - PANEL.height));
+  panel.setBounds({ x: Math.round(x), y: Math.round(y), ...PANEL });
+}
+
+function openPanel() {
+  if (!pet.isVisible()) pet.showInactive();
+  placePanel();
+  panel.show();
+  panel.focus();
+}
+const closePanel = () => panel.hide();
+const togglePanel = () => (panel.isVisible() ? closePanel() : openPanel());
+
+// ---------- menus ----------
+function menuTemplate() {
+  return [
+    { label: "Chat", click: openPanel },
     { label: "Open in browser", click: () => shell.openExternal(srv.url) },
-    { label: "Hide bubble", click: () => win.hide() },
-    { label: "Show bubble", click: () => win.showInactive() },
     { type: "separator" },
     {
-      label: "Start with Windows",
-      type: "checkbox",
-      checked: getShell().openAtLogin,
-      click: (item) => { setShell({ openAtLogin: item.checked }); applyLoginItem(); },
+      label: "Show mascot", type: "checkbox", checked: pet?.isVisible() ?? true,
+      click: (i) => { setShell({ petVisible: i.checked }); i.checked ? pet.showInactive() : (pet.hide(), closePanel()); },
     },
-    { label: "Reset position", click: () => { setShell({ bounds: null }); setExpanded(expanded); } },
+    { label: "Reset mascot position", click: () => { setShell({ petPos: null }); pet.setPosition(petStartPos().x, petStartPos().y); } },
+    {
+      label: "Start with Windows", type: "checkbox", checked: getShell().openAtLogin,
+      click: (i) => { setShell({ openAtLogin: i.checked }); applyLoginItem(); },
+    },
     { label: "Open data folder", click: () => shell.openPath(app.getPath("userData")) },
     { type: "separator" },
-    { label: "Quit", click: () => app.quit() },
-  ]);
+    { label: "Quit Sidekick", click: () => app.quit() },
+  ];
 }
 
 function applyLoginItem() {
   const openAtLogin = getShell().openAtLogin;
-  // From source, electron.exe needs the app folder as an argument; an installed build doesn't.
+  // Installed: launch the exe. From source: electron.exe needs the app folder argument.
   app.setLoginItemSettings(
     app.isPackaged
       ? { openAtLogin }
@@ -119,12 +158,26 @@ function applyLoginItem() {
   );
 }
 
-// ---------- IPC (window controls only; chat goes through the local server) ----------
-ipcMain.handle("shell:toggle", () => toggle());
-ipcMain.handle("shell:collapse", () => setExpanded(false));
+// ---------- IPC ----------
+ipcMain.on("panel:toggle", togglePanel);
+ipcMain.on("panel:open", openPanel);
+ipcMain.on("panel:close", closePanel);
+ipcMain.on("pet:interactive", (_e, on) => pet.setIgnoreMouseEvents(!on, { forward: true }));
+ipcMain.on("pet:menu", () => Menu.buildFromTemplate(menuTemplate()).popup({ window: pet }));
+ipcMain.on("pet:dragStart", () => { dragOrigin = pet.getPosition(); });
+ipcMain.on("pet:dragMove", (_e, dx, dy) => {
+  if (!dragOrigin || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  pet.setBounds({ x: Math.round(dragOrigin[0] + dx), y: Math.round(dragOrigin[1] + dy), ...PET });
+  if (panel.isVisible()) placePanel();
+});
+ipcMain.on("pet:dragEnd", () => {
+  dragOrigin = null;
+  const [x, y] = pet.getPosition();
+  setShell({ petPos: { x, y } });
+});
 
 // ---------- lifecycle ----------
-app.on("second-instance", () => setExpanded(true));
+app.on("second-instance", openPanel);
 app.whenReady().then(async () => {
   try {
     srv = await startServer({ dataDir: app.getPath("userData") });
@@ -137,25 +190,30 @@ app.whenReady().then(async () => {
 
   srv.events.on("reminder", (r) => {
     const n = new Notification({ title: "Sidekick reminder", body: r.text, icon: ICON });
-    n.on("click", () => setExpanded(true));
+    n.on("click", openPanel);
     n.show();
   });
 
-  createWindow(srv.url);
+  createPet();
+  createPanel();
   tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
   tray.setToolTip("Sidekick (Ctrl+Shift+Space)");
-  tray.setContextMenu(trayMenu());
-  tray.on("click", toggle);
-  globalShortcut.register("Control+Shift+Space", toggle);
+  tray.on("click", togglePanel);
+  tray.on("right-click", () => tray.popUpContextMenu(Menu.buildFromTemplate(menuTemplate())));
+  globalShortcut.register("Control+Shift+Space", togglePanel);
 
-  // SIDEKICK_SMOKE=<png path>: open the panel, screenshot it, quit (for testing).
+  // SIDEKICK_SMOKE=<png path>: screenshot the mascot (and chat if SIDEKICK_SMOKE_PANEL), then quit.
   if (process.env.SIDEKICK_SMOKE) {
-    win.webContents.once("did-finish-load", () => {
-      setExpanded(true);
+    pet.webContents.once("did-finish-load", () => {
+      if (process.env.SIDEKICK_SMOKE_PANEL) setTimeout(openPanel, 300);
       setTimeout(async () => {
-        fs.writeFileSync(process.env.SIDEKICK_SMOKE, (await win.webContents.capturePage()).toPNG());
+        const out = process.env.SIDEKICK_SMOKE;
+        fs.writeFileSync(out, (await pet.webContents.capturePage()).toPNG());
+        if (process.env.SIDEKICK_SMOKE_PANEL) {
+          fs.writeFileSync(out.replace(/\.png$/, "-panel.png"), (await panel.webContents.capturePage()).toPNG());
+        }
         app.quit();
-      }, Number(process.env.SIDEKICK_SMOKE_WAIT) || 2000);
+      }, Number(process.env.SIDEKICK_SMOKE_WAIT) || 2500);
     });
     return;
   }

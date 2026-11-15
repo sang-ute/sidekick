@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'" />
+  <title>Sidekick mascot</title>
+  <link rel="stylesheet" href="/mascot.css" />
+</head>
+<body>
+  <div id="speech" class="speech" hidden>
+    <span id="speechText"></span>
+  </div>
+
+  <div id="pet" class="pet idle" title="Click to chat · drag to move">
+    <svg viewBox="0 0 120 124" width="120" height="124" aria-hidden="true">
+      <defs>
+        <linearGradient id="skin" x1="0" y1="0" x2="0.4" y2="1">
+          <stop offset="0" stop-color="#f2a183" />
+          <stop offset="1" stop-color="#cc6444" />
+        </linearGradient>
+        <radialGradient id="glow">
+          <stop offset="0" stop-color="#fff6c9" />
+          <stop offset="1" stop-color="#ffd36b" stop-opacity="0" />
+        </radialGradient>
+      </defs>
+
+      <ellipse class="shadow" cx="60" cy="117" rx="30" ry="5" />
+
+      <g class="body">
+        <!-- legs -->
+        <rect class="leg legL" x="40" y="96" width="12" height="14" rx="6" />
+        <rect class="leg legR" x="68" y="96" width="12" height="14" rx="6" />
+        <!-- arms -->
+        <ellipse class="arm armL" cx="20" cy="74" rx="7" ry="11" />
+        <ellipse class="arm armR" cx="100" cy="74" rx="7" ry="11" />
+        <!-- sprout antenna -->
+        <path class="stem" d="M60 34 Q58 24 62 16" />
+        <circle class="spark-glow" cx="62" cy="14" r="10" fill="url(#glow)" />
+        <circle class="spark" cx="62" cy="14" r="4.5" />
+        <!-- body -->
+        <rect x="18" y="32" width="84" height="72" rx="32" fill="url(#skin)" />
+        <ellipse class="belly" cx="60" cy="86" rx="24" ry="13" />
+        <!-- face -->
+        <g class="eyes">
+          <g class="eye"><ellipse cx="46" cy="62" rx="6.5" ry="8.5" /><circle class="shine" cx="48.5" cy="58.5" r="2.4" /></g>
+          <g class="eye"><ellipse cx="74" cy="62" rx="6.5" ry="8.5" /><circle class="shine" cx="76.5" cy="58.5" r="2.4" /></g>
+          <path class="lid lidL" d="M39 63 Q46 68 53 63" />
+          <path class="lid lidR" d="M67 63 Q74 68 81 63" />
+        </g>
+        <ellipse class="cheek" cx="35" cy="75" rx="6" ry="3.5" />
+        <ellipse class="cheek" cx="85" cy="75" rx="6" ry="3.5" />
+        <path class="mouth smile" d="M54 76 Q60 82 66 76" />
+        <ellipse class="mouth talk" cx="60" cy="79" rx="4.5" ry="3.5" />
+        <path class="mouth sad" d="M55 80 Q60 75 65 80" />
+      </g>
+
+      <g class="zzz"><text x="88" y="30">z</text><text x="98" y="18">z</text></g>
+      <g class="dots"><circle cx="86" cy="22" r="3" /><circle cx="96" cy="16" r="3" /><circle cx="106" cy="10" r="3" /></g>
+    </svg>
+  </div>
+
+  <script src="/mascot.js"></script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: transparent; /* the window itself is transparent: only the pet shows */
+  font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+[hidden] { display: none !important; }
+
+/* ---------- pet ---------- */
+.pet {
+  position: absolute; left: 50%; bottom: 4px; width: 120px; height: 124px;
+  transform: translateX(-50%);
+  cursor: grab; touch-action: none;
+}
+.pet.dragging { cursor: grabbing; }
+.pet svg { overflow: visible; display: block; }
+
+.shadow { fill: #000; opacity: 0.18; transform-origin: 60px 117px; }
+.leg, .arm { fill: #c25b3c; }
+.arm { transform-box: fill-box; transform-origin: 50% 20%; }
+.armL { transform-origin: 80% 20%; }
+.stem { fill: none; stroke: #b9583a; stroke-width: 3; stroke-linecap: round; }
+.spark { fill: #ffd36b; }
+.spark-glow { opacity: 0; }
+.belly { fill: #fff; opacity: 0.18; }
+.eye ellipse { fill: #2b211d; }
+.shine { fill: #fff; }
+.eye { transform-box: fill-box; transform-origin: center; animation: blink 5.5s infinite; }
+.eyes { transition: transform 0.12s ease-out; }
+.lid { fill: none; stroke: #2b211d; stroke-width: 2.6; stroke-linecap: round; opacity: 0; }
+.cheek { fill: #ff8fa3; opacity: 0.55; }
+.mouth { fill: none; stroke: #2b211d; stroke-width: 2.6; stroke-linecap: round; }
+.mouth.talk { fill: #6b2b20; stroke: none; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.mouth.sad { opacity: 0; }
+.zzz, .dots { opacity: 0; }
+.zzz text { fill: #8a7f76; font: 700 12px "Segoe UI", sans-serif; }
+.dots circle { fill: #8a7f76; }
+
+.body { transform-origin: 60px 110px; animation: breathe 3.2s ease-in-out infinite; }
+
+@keyframes breathe { 50% { transform: translateY(-2px) scaleY(1.02); } }
+@keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+
+/* idle: an occasional hop (class added from JS) */
+.pet.hop .body { animation: hop 0.6s ease-out; }
+.pet.hop .shadow { animation: shadowHop 0.6s ease-out; }
+@keyframes hop { 30% { transform: translateY(-16px) scaleY(1.04); } 60% { transform: translateY(0) scaleY(0.92); } 80% { transform: scaleY(1.02); } }
+@keyframes shadowHop { 30% { transform: scale(0.7); opacity: 0.1; } }
+
+/* hover */
+.pet:hover .armR { animation: wave 0.5s ease-in-out 2; }
+@keyframes wave { 50% { transform: rotate(-35deg); } }
+
+/* thinking: look up, spark glows, dots */
+.pet.thinking .spark-glow { opacity: 1; animation: pulse 0.9s ease-in-out infinite alternate; }
+.pet.thinking .dots { opacity: 1; }
+.pet.thinking .dots circle { animation: dot 1.2s infinite; }
+.pet.thinking .dots circle:nth-child(2) { animation-delay: 0.2s; }
+.pet.thinking .dots circle:nth-child(3) { animation-delay: 0.4s; }
+.pet.thinking .body { animation: breathe 1.4s ease-in-out infinite; }
+@keyframes pulse { to { opacity: 0.4; } }
+@keyframes dot { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+
+/* talking: mouth flaps */
+.pet.talking .smile { opacity: 0; }
+.pet.talking .talk { opacity: 1; animation: talk 0.22s ease-in-out infinite alternate; }
+.pet.talking .spark-glow { opacity: 0.7; }
+@keyframes talk { to { transform: scaleY(0.35); } }
+
+/* happy: bounce + arms up */
+.pet.happy .body { animation: hop 0.6s ease-out 2; }
+.pet.happy .arm { animation: wave 0.3s ease-in-out 4; }
+.pet.happy .eye ellipse { ry: 5; }
+
+/* alert (reminder): jump repeatedly */
+.pet.alert .body { animation: hop 0.6s ease-out infinite; }
+.pet.alert .arm { animation: wave 0.3s ease-in-out infinite; }
+.pet.alert .spark-glow { opacity: 1; animation: pulse 0.4s ease-in-out infinite alternate; }
+
+/* sad (error / Claude Code missing) */
+.pet.sad .smile { opacity: 0; }
+.pet.sad .sad { opacity: 1; }
+.pet.sad .body { animation: breathe 5s ease-in-out infinite; }
+
+/* sleeping */
+.pet.sleeping .eye { opacity: 0; animation: none; }
+.pet.sleeping .lid { opacity: 1; }
+.pet.sleeping .zzz { opacity: 1; }
+.pet.sleeping .zzz text { animation: float 2.4s ease-in-out infinite; }
+.pet.sleeping .zzz text:nth-child(2) { animation-delay: 1.2s; }
+.pet.sleeping .body { animation: breathe 4.5s ease-in-out infinite; }
+.pet.sleeping .eyes { transform: none !important; }
+@keyframes float { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(4px, -8px); } }
+
+/* ---------- speech bubble ---------- */
+.speech {
+  position: absolute; left: 8px; right: 8px; bottom: 132px;
+  padding: 8px 12px; border-radius: 14px;
+  background: #fffdf9; color: #2b211d; border: 1px solid #eadfd3;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  cursor: pointer; animation: pop 0.25s ease-out;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.speech::after {
+  content: ""; position: absolute; bottom: -7px; left: 50%; margin-left: -7px;
+  border: 7px solid transparent; border-bottom: 0; border-top-color: #fffdf9;
+}
+@keyframes pop { from { transform: scale(0.8) translateY(6px); opacity: 0; } }
+@media (prefers-color-scheme: dark) {
+  .speech { background: #2a2926; color: #f1eee8; border-color: #3a3834; }
+  .speech::after { border-top-color: #2a2926; }
+}

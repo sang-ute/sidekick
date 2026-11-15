@@ -18,6 +18,9 @@ const STATIC = {
   "/": ["renderer/index.html", "text/html; charset=utf-8"],
   "/style.css": ["renderer/style.css", "text/css; charset=utf-8"],
   "/app.js": ["renderer/app.js", "text/javascript; charset=utf-8"],
+  "/mascot": ["renderer/mascot.html", "text/html; charset=utf-8"],
+  "/mascot.css": ["renderer/mascot.css", "text/css; charset=utf-8"],
+  "/mascot.js": ["renderer/mascot.js", "text/javascript; charset=utf-8"],
   "/icon.png": ["assets/icon.png", "image/png"],
 };
 
@@ -65,7 +68,7 @@ function startServer({ dataDir = defaultDataDir(), port = Number(process.env.SID
   claude.on("tool", (n) => record("tool", n));
   claude.on("note", (n) => record("note", n));
   claude.on("done", () => record("done"));
-  claude.on("error", (e) => record("error", e));
+  claude.on("error", (e) => record("failure", e));
 
   // Reminder scheduler
   const tick = () => {

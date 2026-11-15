@@ -24,27 +24,21 @@ const api = (method, url, body) =>
   }).then((r) => (r.ok ? r.json() : r.json().then((e) => Promise.reject(new Error(e.error)))));
 
 // ---------- layout ----------
-let isExpanded = !shellApi;
+// In the desktop app this page is the chat window that opens next to the mascot;
+// in a browser it fills the tab.
+const isExpanded = true;
 let unread = 0;
 let missing = false;
 
-function applyExpanded() {
-  els.bubble.hidden = isExpanded;
-  els.panel.hidden = !isExpanded;
-  if (isExpanded) {
-    unread = 0;
-    els.badge.hidden = true;
-    els.bubble.classList.remove("alert");
-    showView(missing ? "missing" : "chat");
-  }
-}
+els.bubble.hidden = true;
+els.panel.hidden = false;
 if (shellApi) {
-  shellApi.onExpanded((v) => { isExpanded = v; applyExpanded(); });
+  shellApi.onPanel((open) => { if (open) showView(missing ? "missing" : "chat"); });
 } else {
   document.body.classList.add("browser");
   $("btnClose").hidden = true;
 }
-applyExpanded();
+setTimeout(() => showView("chat"));
 
 function showView(name) {
   els.chatView.hidden = name !== "chat";
@@ -54,12 +48,11 @@ function showView(name) {
   if (name === "rem") renderReminders();
 }
 
-els.bubble.addEventListener("click", () => shellApi?.toggle());
-$("btnClose").addEventListener("click", () => shellApi?.collapse());
+$("btnClose").addEventListener("click", () => shellApi?.closePanel());
 $("btnReminders").addEventListener("click", () => showView(els.remView.hidden ? "rem" : "chat"));
 $("remBack").addEventListener("click", () => showView("chat"));
 $("btnNew").addEventListener("click", () => api("POST", "/api/reset").catch(showErr));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") shellApi?.collapse(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") shellApi?.closePanel(); });
 
 // ---------- chat rendering ----------
 let current = null; // bot message being streamed into
@@ -128,7 +121,7 @@ function apply(type, data, live) {
       finishCurrent();
       setBusy(false);
       break;
-    case "error":
+    case "failure":
       finishCurrent();
       addMsg("error", data);
       setBusy(false);
@@ -179,7 +172,7 @@ function connect() {
     for (const h of history) apply(h.type, h.data, false);
     renderStatus(status);
   });
-  for (const t of ["user", "delta", "tool", "note", "done", "error", "reminder"]) {
+  for (const t of ["user", "delta", "tool", "note", "done", "failure", "reminder"]) {
     es.addEventListener(t, (e) => apply(t, JSON.parse(e.data), true));
   }
   es.addEventListener("status", (e) => renderStatus(JSON.parse(e.data)));
