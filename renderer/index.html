@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
+  <title>Sidekick</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Collapsed: just the bubble -->
+  <button id="bubble" class="bubble" title="Sidekick (Ctrl+Shift+Space)" aria-label="Open Sidekick">
+    <span class="face"><i></i><i></i></span>
+    <span id="badge" class="badge" hidden></span>
+  </button>
+
+  <!-- Expanded: the chat panel -->
+  <section id="panel" class="panel" hidden>
+    <header class="head">
+      <div class="title"><span class="dot"></span>Sidekick</div>
+      <div class="actions">
+        <button id="btnReminders" title="Reminders" aria-label="Reminders">⏰</button>
+        <button id="btnNew" title="New chat" aria-label="New chat">＋</button>
+        <button id="btnClose" title="Collapse (Esc)" aria-label="Collapse">—</button>
+      </div>
+    </header>
+
+    <div id="keyView" class="view key" hidden>
+      <h2>Connect to Claude</h2>
+      <p>Paste an Anthropic API key from <b>console.anthropic.com</b> → API Keys.
+         It's encrypted with Windows' own key store and never leaves this PC except to call Claude.</p>
+      <form id="keyForm">
+        <input id="keyInput" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+        <button type="submit">Save</button>
+      </form>
+      <p id="keyErr" class="err" hidden></p>
+    </div>
+
+    <div id="chatView" class="view chat">
+      <div id="log" class="log" aria-live="polite">
+        <div class="msg bot">Hi! I'm your sidekick. Ask me anything, or say “remind me in 20 minutes to stretch”.</div>
+      </div>
+      <form id="chatForm" class="composer">
+        <textarea id="chatInput" rows="1" placeholder="Message Sidekick…"></textarea>
+        <button id="sendBtn" type="submit" aria-label="Send">➤</button>
+      </form>
+    </div>
+
+    <div id="remView" class="view rem" hidden>
+      <h2>Reminders</h2>
+      <ul id="remList"></ul>
+      <p id="remEmpty" class="muted">Nothing scheduled. Ask in chat: “remind me tomorrow at 9 to apply to …”.</p>
+      <button id="remBack" class="link">← Back to chat</button>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
