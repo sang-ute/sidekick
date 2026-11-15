@@ -32,25 +32,32 @@ let missing = false;
 
 els.bubble.hidden = true;
 els.panel.hidden = false;
+let lastTab = "tasks";
 if (shellApi) {
-  shellApi.onPanel((open) => { if (open) showView(missing ? "missing" : "chat"); });
+  shellApi.onPanel((open) => { if (open) showView(missing ? "missing" : lastTab); });
 } else {
   document.body.classList.add("browser");
   $("btnClose").hidden = true;
 }
-setTimeout(() => showView("chat"));
+setTimeout(() => showView("tasks"));
 
 function showView(name) {
   els.chatView.hidden = name !== "chat";
   els.remView.hidden = name !== "rem";
   els.missingView.hidden = name !== "missing";
+  $("tasksView").hidden = name !== "tasks";
+  $("tabTasks").setAttribute("aria-selected", String(name === "tasks"));
+  $("tabChat").setAttribute("aria-selected", String(name === "chat"));
+  if (name === "tasks" || name === "chat") lastTab = name;
   if (name === "chat") els.input.focus();
   if (name === "rem") renderReminders();
 }
 
+$("tabTasks").addEventListener("click", () => showView("tasks"));
+$("tabChat").addEventListener("click", () => showView("chat"));
 $("btnClose").addEventListener("click", () => shellApi?.closePanel());
-$("btnReminders").addEventListener("click", () => showView(els.remView.hidden ? "rem" : "chat"));
-$("remBack").addEventListener("click", () => showView("chat"));
+$("btnReminders").addEventListener("click", () => showView(els.remView.hidden ? "rem" : lastTab));
+$("remBack").addEventListener("click", () => showView(lastTab));
 $("btnNew").addEventListener("click", () => api("POST", "/api/reset").catch(showErr));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") shellApi?.closePanel(); });
 
@@ -82,7 +89,8 @@ function setBusy(b) {
   busy = b;
   els.send.disabled = b;
   els.input.disabled = b;
-  if (!b && isExpanded) els.input.focus();
+  $("syncBtn").disabled = b;
+  if (!b && !els.chatView.hidden) els.input.focus();
 }
 const showErr = (e) => addMsg("error", String(e.message || e));
 
@@ -90,6 +98,13 @@ const TOOL_LABEL = {
   mcp__sidekick__create_reminder: "⏰ setting a reminder…",
   mcp__sidekick__list_reminders: "📋 checking reminders…",
   mcp__sidekick__delete_reminder: "🗑 removing a reminder…",
+  mcp__sidekick__add_task: "📌 pinning a task…",
+  mcp__sidekick__list_tasks: "📋 reading the task board…",
+  mcp__sidekick__complete_task: "✅ ticking off a task…",
+  mcp__sidekick__delete_task: "🗑 removing a task…",
+  mcp__sidekick__github_inbox: "🐙 checking GitHub…",
+  mcp__sidekick__youtube_latest: "▶️ checking YouTube…",
+  mcp__sidekick__youtube_follow: "▶️ updating your channels…",
   web_search: "🔎 searching the web…",
   WebSearch: "🔎 searching the web…",
   WebFetch: "🌐 reading a page…",
@@ -165,13 +180,15 @@ function renderStatus(s) {
 function connect() {
   const es = new EventSource(`/api/events?t=${encodeURIComponent(TOKEN)}`);
   es.addEventListener("hello", (e) => {
-    const { status, history } = JSON.parse(e.data);
+    const { status, history, tasks } = JSON.parse(e.data);
     greet();
     current = null;
     setBusy(false);
     for (const h of history) apply(h.type, h.data, false);
     renderStatus(status);
+    renderTasks(tasks || []);
   });
+  es.addEventListener("tasks", (e) => renderTasks(JSON.parse(e.data)));
   for (const t of ["user", "delta", "tool", "note", "done", "failure", "reminder"]) {
     es.addEventListener(t, (e) => apply(t, JSON.parse(e.data), true));
   }
@@ -204,8 +221,93 @@ function autosize() {
 }
 els.input.addEventListener("input", autosize);
 
+// ---------- task board ----------
+const SOURCE_LABEL = { me: "✏️ you", gmail: "✉️ Gmail", github: "🐙 GitHub", youtube: "▶️ YouTube", calendar: "📅 Calendar", other: "📎" };
+
+function noteEl(t) {
+  const li = document.createElement("li");
+  li.className = "note";
+  li.dataset.source = t.source;
+
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = t.done;
+  box.title = t.done ? "Mark not done" : "Mark done";
+  box.addEventListener("change", () => api("PATCH", `/api/tasks/${t.id}`, { done: box.checked }).catch(showErr));
+
+  const body = document.createElement("div");
+  body.className = "body";
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = t.title;
+  body.appendChild(title);
+  if (t.notes) {
+    const n = document.createElement("div");
+    n.className = "notes-line";
+    n.textContent = t.notes;
+    body.appendChild(n);
+  }
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const src = document.createElement("span");
+  src.textContent = SOURCE_LABEL[t.source] || t.source;
+  meta.appendChild(src);
+  if (t.due) {
+    const d = document.createElement("span");
+    d.textContent = `due ${fmt(t.due)}`;
+    if (!t.done && new Date(t.due) < new Date()) d.className = "overdue";
+    meta.appendChild(d);
+  }
+  if (t.link && /^https?:\/\//.test(t.link)) {
+    const a = document.createElement("a");
+    a.href = t.link;
+    a.target = "_blank"; // the app opens these in your real browser
+    a.rel = "noopener noreferrer";
+    a.textContent = "open ↗";
+    meta.appendChild(a);
+  }
+  body.appendChild(meta);
+
+  const x = document.createElement("button");
+  x.className = "x";
+  x.textContent = "✕";
+  x.title = "Remove";
+  x.addEventListener("click", () => api("DELETE", `/api/tasks/${t.id}`).catch(showErr));
+
+  li.append(box, body, x);
+  return li;
+}
+
+function renderTasks(list) {
+  const open = list.filter((t) => !t.done).sort((a, b) =>
+    (a.due || "9999").localeCompare(b.due || "9999") || b.createdAt.localeCompare(a.createdAt));
+  const done = list.filter((t) => t.done).sort((a, b) => (b.doneAt || "").localeCompare(a.doneAt || ""));
+  $("taskList").replaceChildren(...open.map(noteEl));
+  $("doneList").replaceChildren(...done.map(noteEl));
+  $("taskEmpty").hidden = open.length > 0;
+  $("doneBox").hidden = done.length === 0;
+  $("doneCount").textContent = String(done.length);
+  $("taskCount").textContent = String(open.length);
+  $("taskCount").hidden = open.length === 0;
+}
+
+$("taskForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("taskInput");
+  const title = input.value.trim();
+  if (!title) return;
+  input.value = "";
+  api("POST", "/api/tasks", { title }).catch(showErr);
+});
+
+$("syncBtn").addEventListener("click", async () => {
+  $("syncBtn").disabled = true;
+  try { await api("POST", "/api/sync"); }
+  catch (e) { showErr(e); $("syncBtn").disabled = busy; }
+});
+
 // ---------- reminders ----------
-const fmt = (iso) => new Date(iso).toLocaleString(undefined, {
+const fmt =(iso) => new Date(iso).toLocaleString(undefined, {
   weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
 });
 async function renderReminders() {

@@ -17,6 +17,7 @@ let tray = null;
 let srv = null;
 let dragOrigin = null;
 
+if (process.env.SIDEKICK_DATA_DIR) app.setPath("userData", process.env.SIDEKICK_DATA_DIR); // testing
 if (!app.requestSingleInstanceLock()) app.exit(0);
 app.setAppUserModelId("com.sidekick.assistant"); // needed for Windows toast notifications
 

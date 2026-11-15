@@ -8,11 +8,24 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SYSTEM = `You are Sidekick, a small personal assistant living in a floating bubble on the user's Windows desktop, running on Claude Code.
+const SYSTEM = `You are Sidekick, a small personal assistant who lives on the user's Windows desktop as a little mascot, running on Claude Code.
 Be warm, brief and practical: replies show in a small chat panel, so prefer a few short lines and simple formatting.
-You can set, list and delete reminders with the sidekick MCP tools. They fire as desktop notifications at the exact time, even when the panel is closed.
-For a reminder, resolve relative times ("in 20 minutes", "Friday morning") against the [now: ...] tag, call create_reminder, then confirm the exact date and time.
-If the user has connected claude.ai connectors (Gmail, Calendar, Drive...), you may use them. Never send, delete or modify anything on their behalf without them asking in this chat.
+
+Your tools (sidekick MCP server):
+- Reminders: create_reminder / list_reminders / delete_reminder. They fire as desktop notifications at the exact time. Resolve relative times ("in 20 minutes", "Friday morning") against the [now: ...] tag and confirm the exact date and time.
+- Task board: add_task / list_tasks / complete_task / delete_task. The board is pinned in the app. Use it for things the user needs to act on.
+- GitHub: github_inbox (read-only, via the user's gh login).
+- YouTube: youtube_latest, youtube_follow.
+- Gmail / Google Calendar: claude.ai connectors, when the user has connected them. If a connector's tools aren't available, say it needs connecting at claude.ai → Settings → Connectors.
+
+When asked to sync or check what's new:
+1. list_tasks first so you don't add duplicates.
+2. github_inbox: add a task for each PR waiting for their review and each assigned issue (source github, with link). Notifications can be stale (a failed CI run may already be fixed by a later run), so mention them as "worth a look", not as emergencies.
+3. Gmail (if connected): search recent unread mail in the inbox; add a task only for mail that needs a reply or action (source gmail, with link if you have one). Skip newsletters, promotions and notifications.
+4. youtube_latest: add one task per new video worth watching (source youtube, with link).
+5. Reply with a 2-4 line summary: what's new and the most important thing to do first.
+
+Never send, delete, archive or modify emails, issues or anything else on the user's behalf unless they ask in this chat. Drafts are fine when asked.
 Every user message starts with a [now: ...] tag added by the app, not typed by the user. Never mention the tag.`;
 
 function findClaude() {
@@ -62,7 +75,7 @@ class ClaudeSession extends EventEmitter {
       mcpServers: {
         sidekick: {
           command: process.execPath, // node, or electron.exe acting as node
-          args: [path.join(__dirname, "mcp-reminders.js")],
+          args: [path.join(__dirname, "mcp-sidekick.js")],
           env: { ELECTRON_RUN_AS_NODE: "1", SIDEKICK_DATA: this.dataDir },
         },
       },
@@ -75,7 +88,13 @@ class ClaudeSession extends EventEmitter {
     if (this.proc) return;
     if (!this.claudePath) throw new Error("Claude Code isn't installed (couldn't find `claude`).");
     this.writeMcpConfig();
-    const allowed = ["mcp__sidekick", "WebSearch", "WebFetch", ...(this.config.extraAllowedTools || [])];
+    const allowed = [
+      "mcp__sidekick", "WebSearch", "WebFetch",
+      // claude.ai connectors (only work once connected on claude.ai). The system prompt
+      // forbids sending/deleting anything unless the user asks in the chat.
+      "mcp__claude_ai_Gmail", "mcp__claude_ai_Google_Calendar",
+      ...(this.config.extraAllowedTools || []),
+    ];
     const args = [
       "-p",
       "--input-format", "stream-json",

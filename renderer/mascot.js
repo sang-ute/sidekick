@@ -108,7 +108,9 @@ let replyPreview = "";
 function connect() {
   const es = new EventSource(`/api/events?t=${encodeURIComponent(TOKEN)}`);
   es.addEventListener("hello", (e) => {
-    const { status } = JSON.parse(e.data);
+    const { status, tasks, skin } = JSON.parse(e.data);
+    showTaskCount(tasks || []);
+    if (skin) useSkin();
     if (status.state === "missing") { setMood("sad"); say("I can't find Claude Code. Is it installed and signed in?", 0); }
   });
   es.addEventListener("user", () => { replyPreview = ""; setMood("thinking"); });
@@ -132,10 +134,24 @@ function connect() {
     setMood("alert", 15000);
     say(`⏰ ${r.text}`, 30000);
   });
+  es.addEventListener("tasks", (e) => showTaskCount(JSON.parse(e.data)));
   es.addEventListener("status", (e) => {
     const s = JSON.parse(e.data);
     if (s.state === "missing") setMood("sad");
   });
 }
 connect();
+
+function showTaskCount(list) {
+  const n = list.filter((t) => !t.done).length;
+  const badge = document.getElementById("tasksBadge");
+  badge.textContent = String(n);
+  badge.hidden = n === 0;
+}
+
+function useSkin() {
+  const img = document.getElementById("skin");
+  img.onload = () => { img.hidden = false; pet.classList.add("has-skin"); };
+  img.src = "/skin?v=" + Date.now();
+}
 setTimeout(() => say("Hi! Click me to chat. Drag me anywhere. 👋", 6000), 800);

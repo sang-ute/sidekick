@@ -33,6 +33,26 @@
       </div>
     </header>
 
+    <nav class="tabs" role="tablist">
+      <button id="tabTasks" role="tab" class="tab">📌 Tasks <span id="taskCount" class="count" hidden></span></button>
+      <button id="tabChat" role="tab" class="tab">💬 Chat</button>
+    </nav>
+
+    <div id="tasksView" class="view board" hidden>
+      <div class="board-head">
+        <form id="taskForm" class="task-add">
+          <input id="taskInput" placeholder="Add a task…" autocomplete="off" maxlength="200" />
+        </form>
+        <button id="syncBtn" class="sync" title="Check GitHub, Gmail and YouTube for new to-dos">🔄 Sync</button>
+      </div>
+      <ul id="taskList" class="notes"></ul>
+      <p id="taskEmpty" class="muted empty">All clear ✨ Press <b>Sync</b> to pull to-dos from GitHub, Gmail and YouTube, or add one above.</p>
+      <details id="doneBox" class="done-box" hidden>
+        <summary>Done (<span id="doneCount">0</span>)</summary>
+        <ul id="doneList" class="notes done"></ul>
+      </details>
+    </div>
+
     <div id="missingView" class="view info" hidden>
       <h2>Claude Code not found</h2>
       <p>Sidekick runs on your Claude Code login. Install Claude Code, run <code>claude</code> once in a terminal to sign in, then restart Sidekick from the tray.</p>

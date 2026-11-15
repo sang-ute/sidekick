@@ -110,3 +110,30 @@ html, body {
   .speech { background: #2a2926; color: #f1eee8; border-color: #3a3834; }
   .speech::after { border-top-color: #2a2926; }
 }
+
+/* sparkle antenna */
+.spark { fill: #ffd36b; stroke: #e9a93a; stroke-width: 0.8; transform-box: fill-box; transform-origin: center; animation: twinkle 4s ease-in-out infinite; }
+@keyframes twinkle { 0%, 80%, 100% { transform: rotate(0) scale(1); } 90% { transform: rotate(45deg) scale(1.15); } }
+.pet.thinking .spark { animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* open-task badge: a tiny sticky note */
+.tasks-badge {
+  position: absolute; right: 2px; top: 30px; min-width: 22px; height: 22px; padding: 0 5px;
+  background: #fff4b8; color: #6b4b12; border-radius: 3px 8px 8px 8px;
+  font: 700 12px/22px "Segoe UI", sans-serif; text-align: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25); transform: rotate(6deg);
+}
+
+/* custom skin: same moods, applied to the image */
+.pet.has-skin svg .body, .pet.has-skin svg .shadow { display: none; }
+.skin {
+  position: absolute; left: 50%; bottom: 6px; max-width: 120px; max-height: 120px;
+  transform-origin: 50% 100%; translate: -50% 0; pointer-events: none;
+  animation: breathe 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.25));
+}
+.pet.hop .skin, .pet.happy .skin { animation: hop 0.6s ease-out 2; }
+.pet.alert .skin { animation: hop 0.6s ease-out infinite; }
+.pet.thinking .skin, .pet.talking .skin { animation: breathe 1.2s ease-in-out infinite; }
+.pet.sleeping .skin { animation: breathe 4.5s ease-in-out infinite; filter: grayscale(0.4) brightness(0.9); }

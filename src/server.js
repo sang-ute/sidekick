@@ -11,6 +11,12 @@ const path = require("path");
 const { EventEmitter } = require("events");
 const { ClaudeSession } = require("./claude");
 const reminders = require("./reminders");
+const tasks = require("./tasks");
+
+// What Sidekick asks Claude Code when you press Sync (or at the daily sync time).
+const SYNC_PROMPT =
+  "Sync now: check my GitHub inbox, my Gmail if it's connected, and new videos from the YouTube channels I follow. " +
+  "Put what I need to act on onto the task board (skip anything already there), then give me a short summary.";
 
 const DEFAULT_PORT = 47821;
 const ROOT = path.join(__dirname, "..");
@@ -34,7 +40,12 @@ function readConfig(dataDir) {
   const file = path.join(dataDir, "config.json");
   let cfg = {};
   try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
-  const merged = { effort: "low", model: null, extraAllowedTools: [], ...cfg };
+  const merged = {
+    effort: "low", model: null, extraAllowedTools: [],
+    dailySyncTime: "08:30", // local HH:MM, or null to turn the daily sync off
+    youtubeChannels: [],
+    ...cfg,
+  };
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(file, JSON.stringify(merged, null, 2)); // writes defaults so the user can edit them
   return merged;
@@ -70,15 +81,47 @@ function startServer({ dataDir = defaultDataDir(), port = Number(process.env.SID
   claude.on("done", () => record("done"));
   claude.on("error", (e) => record("failure", e));
 
-  // Reminder scheduler
+  // ---- task board: Claude changes it from another process, so watch the file ----
+  const tasksFile = path.join(dataDir, "tasks.json");
+  tasks.prune(dataDir);
+  const pushTasks = () => broadcast("tasks", tasks.load(dataDir));
+  fs.watchFile(tasksFile, { interval: 1000 }, pushTasks);
+
+  // ---- sync: GitHub + Gmail + YouTube → task board ----
+  const stateFile = path.join(dataDir, "state.json");
+  const readState = () => { try { return JSON.parse(fs.readFileSync(stateFile, "utf8")); } catch { return {}; } };
+  const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local
+  function sync(reason) {
+    if (claude.busy || !claude.ready) return false;
+    fs.writeFileSync(stateFile, JSON.stringify({ ...readState(), lastSync: today() }));
+    record("user", reason === "daily" ? "🗞 Daily sync: GitHub, Gmail, YouTube…" : "🔄 Sync: GitHub, Gmail, YouTube…");
+    claude.send(SYNC_PROMPT);
+    return true;
+  }
+
+  // ---- scheduler: reminders every 15s, daily sync once a day ----
   const tick = () => {
     for (const r of reminders.takeDue(dataDir)) {
       record("reminder", r);
       events.emit("reminder", r);
     }
+    const at = config.dailySyncTime;
+    if (/^\d{2}:\d{2}$/.test(at || "") && readState().lastSync !== today()) {
+      const hhmm = new Date().toTimeString().slice(0, 5);
+      if (hhmm >= at) sync("daily"); // also catches up right after boot if the PC was off at sync time
+    }
   };
   const timer = setInterval(tick, 15_000);
-  tick();
+  setTimeout(tick, 5_000); // give Claude Code a moment to start before a catch-up sync
+
+  const SKIN_TYPES = { png: "image/png", gif: "image/gif", webp: "image/webp" };
+  function findSkin() {
+    for (const [ext, type] of Object.entries(SKIN_TYPES)) {
+      const file = path.join(dataDir, `mascot.${ext}`);
+      if (fs.existsSync(file)) return { file, type };
+    }
+    return null;
+  }
 
   const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const authed = (req, url) => {
@@ -107,13 +150,21 @@ function startServer({ dataDir = defaultDataDir(), port = Number(process.env.SID
       res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
       return fs.createReadStream(path.join(ROOT, file)).pipe(res);
     }
+    // Custom mascot image the user dropped into the data folder (mascot.png/.gif/.webp).
+    if (req.method === "GET" && url.pathname === "/skin") {
+      const skin = findSkin();
+      if (!skin) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { "Content-Type": skin.type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+      return fs.createReadStream(skin.file).pipe(res);
+    }
     if (!url.pathname.startsWith("/api/")) { res.writeHead(404); return res.end(); }
     if (!authed(req, url)) return sendJson(res, 401, { error: "bad token" });
 
     try {
       if (req.method === "GET" && url.pathname === "/api/events") {
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
-        res.write(`event: hello\ndata: ${JSON.stringify({ status, history })}\n\n`);
+        const hello = { status, history, tasks: tasks.load(dataDir), skin: Boolean(findSkin()) };
+        res.write(`event: hello\ndata: ${JSON.stringify(hello)}\n\n`);
         clients.add(res);
         const ping = setInterval(() => res.write(": ping\n\n"), 25_000);
         req.on("close", () => { clearInterval(ping); clients.delete(res); });
@@ -139,6 +190,30 @@ function startServer({ dataDir = defaultDataDir(), port = Number(process.env.SID
       if (req.method === "DELETE" && del) {
         return sendJson(res, 200, { deleted: reminders.remove(dataDir, del[1]) });
       }
+      // ---- task board ----
+      if (req.method === "GET" && url.pathname === "/api/tasks") return sendJson(res, 200, tasks.load(dataDir));
+      if (req.method === "POST" && url.pathname === "/api/tasks") {
+        const { title } = await readBody(req);
+        if (typeof title !== "string" || !title.trim()) return sendJson(res, 400, { error: "empty task" });
+        const r = tasks.add(dataDir, { title: title.trim(), source: "me" });
+        pushTasks();
+        return sendJson(res, 201, r);
+      }
+      const t = url.pathname.match(/^\/api\/tasks\/([a-z0-9]+)$/);
+      if (t && req.method === "PATCH") {
+        const body = await readBody(req);
+        const task = tasks.update(dataDir, t[1], { done: body.done, title: body.title });
+        pushTasks();
+        return task ? sendJson(res, 200, task) : sendJson(res, 404, { error: "no such task" });
+      }
+      if (t && req.method === "DELETE") {
+        const deleted = tasks.remove(dataDir, t[1]);
+        pushTasks();
+        return sendJson(res, 200, { deleted });
+      }
+      if (req.method === "POST" && url.pathname === "/api/sync") {
+        return sync("manual") ? sendJson(res, 202, { ok: true }) : sendJson(res, 409, { error: "Busy, try again in a moment" });
+      }
       sendJson(res, 404, { error: "not found" });
     } catch (err) {
       sendJson(res, 500, { error: String(err.message || err) });
@@ -153,7 +228,13 @@ function startServer({ dataDir = defaultDataDir(), port = Number(process.env.SID
       if (claude.ready) { try { claude.start(); } catch {} }
       resolve({
         url, port, token, events,
-        close() { clearInterval(timer); claude.stop(); for (const c of clients) c.end(); server.close(); },
+        close() {
+          clearInterval(timer);
+          fs.unwatchFile(tasksFile);
+          claude.stop();
+          for (const c of clients) c.end();
+          server.close();
+        },
       });
     });
   });
