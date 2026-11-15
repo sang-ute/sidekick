@@ -1,11 +1,11 @@
-// Electron main process: floating bubble window, tray, global shortcut,
-// launch-at-login, and the reminder scheduler.
+// Electron shell: starts the local server (which connects Claude Code), shows the
+// floating bubble, tray icon, global shortcut, native notifications, launch at login.
+const fs = require("fs");
 const path = require("path");
 const {
-  app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, screen, nativeImage,
+  app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, screen, nativeImage, shell, dialog,
 } = require("electron");
-const store = require("./store");
-const { Agent } = require("./agent");
+const { startServer } = require("./server");
 
 const BUBBLE = { width: 76, height: 76 };
 const PANEL = { width: 380, height: 580 };
@@ -14,28 +14,37 @@ const ICON = path.join(__dirname, "..", "assets", "icon.png");
 
 let win = null;
 let tray = null;
+let srv = null;
 let expanded = false;
-const agent = new Agent();
 
-if (!app.requestSingleInstanceLock()) app.quit();
+if (!app.requestSingleInstanceLock()) app.exit(0);
 app.setAppUserModelId("com.sidekick.assistant"); // required for Windows toast notifications
 
-// ---------- window ----------
-// The window's bottom-right corner is its anchor: the bubble sits there and
-// the panel grows up and to the left from it.
-function anchor() {
-  const saved = store.getSettings().bounds;
-  if (saved) return saved;
-  const wa = screen.getPrimaryDisplay().workArea;
-  return { right: wa.x + wa.width - MARGIN, bottom: wa.y + wa.height - MARGIN };
+// ---------- shell settings (window position, autostart) ----------
+const shellFile = () => path.join(app.getPath("userData"), "shell.json");
+function getShell() {
+  try { return { openAtLogin: true, bounds: null, ...JSON.parse(fs.readFileSync(shellFile(), "utf8")) }; }
+  catch { return { openAtLogin: true, bounds: null }; }
+}
+function setShell(patch) {
+  fs.mkdirSync(app.getPath("userData"), { recursive: true });
+  fs.writeFileSync(shellFile(), JSON.stringify({ ...getShell(), ...patch }, null, 2));
 }
 
+// ---------- window ----------
+// The bottom-right corner is the anchor: the bubble sits there, the panel grows up-left from it.
+function anchor() {
+  const saved = getShell().bounds;
+  const wa = screen.getPrimaryDisplay().workArea;
+  if (saved && saved.right <= wa.x + wa.width + 50 && saved.bottom <= wa.y + wa.height + 50) return saved;
+  return { right: wa.x + wa.width - MARGIN, bottom: wa.y + wa.height - MARGIN };
+}
 function boundsFor(size) {
   const { right, bottom } = anchor();
   return { x: right - size.width, y: bottom - size.height, ...size };
 }
 
-function createWindow() {
+function createWindow(url) {
   win = new BrowserWindow({
     ...boundsFor(BUBBLE),
     frame: false,
@@ -54,137 +63,103 @@ function createWindow() {
     },
   });
   win.setAlwaysOnTop(true, "floating");
-  win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  win.loadURL(url);
   win.once("ready-to-show", () => win.showInactive());
-
-  // Remember where the user dragged the panel (by its bottom-right corner).
+  // Links Claude writes open in the real browser, never inside the bubble.
+  win.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (/^https?:\/\//.test(target)) shell.openExternal(target);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (e, target) => {
+    if (!target.startsWith(`http://127.0.0.1:${srv.port}/`)) e.preventDefault();
+  });
   win.on("moved", () => {
     const b = win.getBounds();
-    store.updateSettings({ bounds: { right: b.x + b.width, bottom: b.y + b.height } });
+    setShell({ bounds: { right: b.x + b.width, bottom: b.y + b.height } });
   });
 }
 
 function setExpanded(next) {
   expanded = next;
+  if (!win.isVisible()) win.showInactive();
   win.setBounds(boundsFor(expanded ? PANEL : BUBBLE));
-  win.webContents.send("ui:expanded", expanded);
+  win.webContents.send("shell:expanded", expanded);
   if (expanded) win.focus();
 }
-
-function toggle() {
-  if (!win.isVisible()) win.showInactive();
-  setExpanded(!expanded);
-}
+const toggle = () => setExpanded(!expanded);
 
 // ---------- tray ----------
-function buildTrayMenu() {
-  const s = store.getSettings();
+function trayMenu() {
   return Menu.buildFromTemplate([
     { label: "Open Sidekick", click: () => setExpanded(true) },
+    { label: "Open in browser", click: () => shell.openExternal(srv.url) },
     { label: "Hide bubble", click: () => win.hide() },
     { label: "Show bubble", click: () => win.showInactive() },
     { type: "separator" },
     {
       label: "Start with Windows",
       type: "checkbox",
-      checked: s.openAtLogin,
-      click: (item) => {
-        store.updateSettings({ openAtLogin: item.checked });
-        applyLoginItem();
-      },
+      checked: getShell().openAtLogin,
+      click: (item) => { setShell({ openAtLogin: item.checked }); applyLoginItem(); },
     },
-    { label: "Reset position", click: () => { store.updateSettings({ bounds: null }); setExpanded(expanded); } },
+    { label: "Reset position", click: () => { setShell({ bounds: null }); setExpanded(expanded); } },
+    { label: "Open data folder", click: () => shell.openPath(app.getPath("userData")) },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]);
 }
 
-function createTray() {
-  tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
-  tray.setToolTip("Sidekick (Ctrl+Shift+Space)");
-  tray.setContextMenu(buildTrayMenu());
-  tray.on("click", toggle);
-}
-
 function applyLoginItem() {
-  const openAtLogin = store.getSettings().openAtLogin;
-  // In dev, electron.exe needs the app folder as an argument; packaged builds don't.
-  const opts = app.isPackaged
-    ? { openAtLogin }
-    : { openAtLogin, path: process.execPath, args: [path.resolve(__dirname, "..")] };
-  app.setLoginItemSettings(opts);
+  const openAtLogin = getShell().openAtLogin;
+  // From source, electron.exe needs the app folder as an argument; an installed build doesn't.
+  app.setLoginItemSettings(
+    app.isPackaged
+      ? { openAtLogin }
+      : { openAtLogin, path: process.execPath, args: [path.resolve(__dirname, "..")] },
+  );
 }
 
-// ---------- reminders ----------
-function nextOccurrence(r) {
-  const step = r.repeat === "daily" ? 864e5 : 7 * 864e5;
-  let t = new Date(r.dueAt).getTime();
-  while (t <= Date.now()) t += step; // skip occurrences missed while the PC was off
-  return new Date(t).toISOString();
-}
-
-function checkReminders() {
-  const now = Date.now();
-  const list = store.getReminders();
-  let changed = false;
-  const keep = [];
-  for (const r of list) {
-    if (new Date(r.dueAt).getTime() > now) { keep.push(r); continue; }
-    changed = true;
-    const n = new Notification({ title: "Sidekick reminder", body: r.text, icon: ICON });
-    n.on("click", () => setExpanded(true));
-    n.show();
-    win?.webContents.send("ui:reminder", r);
-    if (r.repeat === "daily" || r.repeat === "weekly") keep.push({ ...r, dueAt: nextOccurrence(r) });
-  }
-  if (changed) store.saveReminders(keep);
-}
-
-// ---------- IPC ----------
-ipcMain.handle("ui:toggle", () => toggle());
-ipcMain.handle("ui:collapse", () => setExpanded(false));
-ipcMain.handle("settings:hasKey", () => Boolean(store.getApiKey()));
-ipcMain.handle("settings:setKey", (_e, key) => {
-  if (typeof key !== "string" || !key.trim().startsWith("sk-ant-")) {
-    throw new Error("That doesn't look like an Anthropic API key (sk-ant-…)");
-  }
-  store.setApiKey(key);
-  return true;
-});
-ipcMain.handle("chat:reset", () => agent.reset());
-ipcMain.handle("reminders:list", () => store.getReminders());
-ipcMain.handle("reminders:delete", (_e, id) => store.removeReminder(String(id)));
-ipcMain.on("chat:send", (e, text) => {
-  if (typeof text !== "string" || !text.trim()) return;
-  const send = (ch, ...a) => !e.sender.isDestroyed() && e.sender.send(ch, ...a);
-  agent.send(text.trim(), {
-    delta: (t) => send("chat:delta", t),
-    tool: (name) => send("chat:tool", name),
-    done: () => send("chat:done"),
-    error: (msg) => send("chat:error", msg),
-  });
-});
+// ---------- IPC (window controls only; chat goes through the local server) ----------
+ipcMain.handle("shell:toggle", () => toggle());
+ipcMain.handle("shell:collapse", () => setExpanded(false));
 
 // ---------- lifecycle ----------
 app.on("second-instance", () => setExpanded(true));
-app.whenReady().then(() => {
-  createWindow();
-  createTray();
-  // SIDEKICK_SMOKE=<png path>: open the panel, screenshot it, quit (used for testing).
+app.whenReady().then(async () => {
+  try {
+    srv = await startServer({ dataDir: app.getPath("userData") });
+  } catch (err) {
+    dialog.showErrorBox("Sidekick", err.code === "EADDRINUSE"
+      ? "Port 47821 is busy. Is Sidekick already running (maybe via `npm run server`)?"
+      : String(err));
+    return app.exit(1);
+  }
+
+  srv.events.on("reminder", (r) => {
+    const n = new Notification({ title: "Sidekick reminder", body: r.text, icon: ICON });
+    n.on("click", () => setExpanded(true));
+    n.show();
+  });
+
+  createWindow(srv.url);
+  tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
+  tray.setToolTip("Sidekick (Ctrl+Shift+Space)");
+  tray.setContextMenu(trayMenu());
+  tray.on("click", toggle);
+  globalShortcut.register("Control+Shift+Space", toggle);
+
+  // SIDEKICK_SMOKE=<png path>: open the panel, screenshot it, quit (for testing).
   if (process.env.SIDEKICK_SMOKE) {
     win.webContents.once("did-finish-load", () => {
       setExpanded(true);
       setTimeout(async () => {
-        require("fs").writeFileSync(process.env.SIDEKICK_SMOKE, (await win.webContents.capturePage()).toPNG());
-        app.exit(0);
-      }, 1500);
+        fs.writeFileSync(process.env.SIDEKICK_SMOKE, (await win.webContents.capturePage()).toPNG());
+        app.quit();
+      }, Number(process.env.SIDEKICK_SMOKE_WAIT) || 2000);
     });
     return;
   }
   applyLoginItem();
-  globalShortcut.register("Control+Shift+Space", toggle);
-  checkReminders();
-  setInterval(checkReminders, 15_000);
 });
-app.on("will-quit", () => globalShortcut.unregisterAll());
-app.on("window-all-closed", (e) => e.preventDefault()); // live in the tray
+app.on("will-quit", () => { globalShortcut.unregisterAll(); srv?.close(); });
+app.on("window-all-closed", (e) => e.preventDefault()); // keep living in the tray

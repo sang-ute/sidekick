@@ -81,7 +81,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .actions button:hover { background: var(--user); }
 
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.key, .rem { padding: 18px; gap: 10px; overflow-y: auto; }
+.info { padding: 18px; gap: 10px; overflow-y: auto; }
 h2 { margin: 0; font-size: 16px; }
 p { margin: 0; }
 .muted { color: var(--muted); }
@@ -100,17 +100,17 @@ p { margin: 0; }
 .msg.thinking::after { content: "●●●"; letter-spacing: 2px; color: var(--muted); animation: fade 1s infinite alternate; }
 @keyframes fade { to { opacity: 0.3; } }
 
-.composer, #keyForm {
+.composer {
   display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); background: var(--surface);
 }
-#keyForm { border: 0; padding: 0; background: none; }
+
 textarea, input {
   flex: 1; resize: none; max-height: 120px;
   padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px;
   background: var(--bg); color: var(--text); font: inherit; outline: none;
 }
 textarea:focus, input:focus { border-color: var(--accent); }
-.composer button, #keyForm button {
+.composer button {
   border: 0; border-radius: 12px; padding: 0 14px; background: var(--accent); color: var(--accent-ink); font-weight: 600;
 }
 .composer button:disabled { opacity: 0.5; cursor: default; }
@@ -125,3 +125,20 @@ textarea:focus, input:focus { border-color: var(--accent); }
 #remList button { border: 0; background: none; color: var(--muted); font-size: 16px; }
 #remList button:hover { color: var(--err); }
 .link { align-self: flex-start; border: 0; background: none; color: var(--accent); padding: 0; }
+
+/* ---------- status ---------- */
+.title > div { display: flex; flex-direction: column; line-height: 1.2; }
+.status { font-weight: 400; font-size: 11px; color: var(--muted); max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { flex: none; transition: background 0.2s; }
+.dot[data-state="ready"], .dot[data-state="idle"] { background: #3fb950; }
+.dot[data-state="starting"] { background: #d29922; }
+.dot[data-state="stopped"] { background: var(--muted); }
+.dot[data-state="missing"] { background: var(--err); }
+code { font-family: Consolas, ui-monospace, monospace; font-size: 12px; padding: 1px 4px; border-radius: 4px; background: var(--user); }
+
+/* ---------- plain browser tab ---------- */
+body.browser { background: var(--bg); }
+body.browser .bubble { display: none; }
+body.browser .panel { inset: 0; margin: 0 auto; max-width: 760px; border-radius: 0; border-top: 0; border-bottom: 0; box-shadow: none; }
+body.browser .head { -webkit-app-region: no-drag; }
+body.browser .status { max-width: 60vw; }
