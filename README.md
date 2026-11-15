@@ -5,11 +5,15 @@ No API key. A little blue mascot lives on your screen: it blinks, watches your c
 naps when you're away, thinks while Claude works, sends out signal waves while it fetches your data,
 and rings a bell when a reminder is due. Click it to chat.
 
+![Sidekick: the task board and the mascot with its notifier](docs/screenshots/hero.png)
+
+![The mascot's moods: idle, handling a request, fetching data, answering, reminding, napping](docs/screenshots/mascot-moods.png)
+
 ## Install
 
 Requirement: Claude Code installed and signed in (run `claude` in a terminal once).
 
-1. Run `dist/Sidekick Setup <version>.exe`. Windows SmartScreen may warn because the app isn't
+1. Download **Sidekick Setup <version>.exe** from [Releases](../../releases) (or build it with `npm run dist`) and run it. Windows SmartScreen may warn because the app isn't
    code-signed: click **More info → Run anyway**.
 2. Sidekick starts right away, and from then on at every Windows login.
 
@@ -19,11 +23,15 @@ Requirement: Claude Code installed and signed in (run `claude` in a terminal onc
 - **Ctrl+Shift+Space** toggles the chat from anywhere; **Esc** closes it.
 - Try: *"remind me in 2 minutes to drink water"*, *"every weekday at 9 remind me to check job boards"*.
 
+<p><img src="docs/screenshots/chat-dark.png" width="320" alt="Chat window in dark mode with a formatted answer from Claude Code"></p>
+
 ## Notifier
 
 A chat-bubble mini dashboard above the mascot. It pops up when something happens (a reminder fires,
 a sync finishes, Claude pins a new task) and when you hover the mascot. It shows your open tasks, the
 next reminder and the last sync, plus a list of recent notifications you can open or dismiss.
+
+![The notifier in light and dark mode](docs/screenshots/notifier.png)
 
 ## Settings
 
@@ -39,6 +47,11 @@ Click ⚙ (chat window or notifier), or right-click the mascot → **Settings…
 
 Sidekick runs on Claude Code, so it uses Claude models only.
 
+| | |
+|---|---|
+| ![General settings](docs/screenshots/settings-general.png) | ![AI and account settings](docs/screenshots/settings-ai.png) |
+| ![Connections settings](docs/screenshots/settings-connections.png) | ![Mascot and alerts settings](docs/screenshots/settings-mascot.png) |
+
 ## Task board
 
 The chat window opens on **📌 Tasks**, a sticky-note board of things you need to do.
@@ -49,6 +62,8 @@ The chat window opens on **📌 Tasks**, a sticky-note board of things you need 
   after login if the PC was off at that time.
 - Claude can manage the board from chat too: *"add a task to email my professor"*, *"what's on my plate?"*.
 - The mascot carries a little sticky note with your open-task count.
+
+<p><img src="docs/screenshots/tasks-light.png" width="320" alt="Task board with sticky notes from Gmail, GitHub, YouTube and Calendar"></p>
 
 ## Connections
 
@@ -100,6 +115,7 @@ npm install
 npm start          # run from source
 npm run server     # just the local server; open the printed URL in any browser
 npm run dist       # build the installer into dist/
+npm run screenshots  # regenerate docs/screenshots (sample data; runs one short real chat)
 ```
 
 | File | Role |

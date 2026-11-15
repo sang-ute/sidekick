@@ -7,7 +7,8 @@
     "start": "node scripts/start.js",
     "icon": "node scripts/make-icon.js",
     "server": "node src/server.js",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "screenshots": "node scripts/start.js scripts/screenshots.js"
   },
   "author": "sang-ute",
   "license": "UNLICENSED",
