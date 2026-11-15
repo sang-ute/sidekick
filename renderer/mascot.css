@@ -9,7 +9,7 @@
   --n-hover: #f3f8fe;
   --n-accent: #2f7fd8;
   --n-accent-ink: #ffffff;
-  --n-shadow: 0 10px 28px rgba(20, 36, 58, 0.22);
+  --n-shadow: 0 6px 16px rgba(20, 36, 58, 0.2);
   --k-reminder: #f5a524;
   --k-sync: #2f7fd8;
   --k-task: #d9a400;
@@ -27,7 +27,7 @@
     --n-hover: #222d3c;
     --n-accent: #6cb2ff;
     --n-accent-ink: #0d1a2b;
-    --n-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+    --n-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
     --k-sync: #6cb2ff;
     --k-task: #f0c419;
     color-scheme: dark;
@@ -42,7 +42,7 @@
   --n-hover: #222d3c;
   --n-accent: #6cb2ff;
   --n-accent-ink: #0d1a2b;
-  --n-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  --n-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
   --k-sync: #6cb2ff;
   --k-task: #f0c419;
   color-scheme: dark;
@@ -231,9 +231,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---------- notifier: chat-bubble mini dashboard ---------- */
 .notifier {
-  position: absolute; left: 10px; right: 10px;
+  position: absolute; left: 20px; right: 20px; /* room for the shadow inside the window */
   bottom: calc(124px * var(--scale) + 14px);
-  max-height: calc(100vh - 124px * var(--scale) - 22px);
+  max-height: calc(100vh - 124px * var(--scale) - 36px);
   display: flex; flex-direction: column;
   background: var(--n-bg); color: var(--n-text);
   border: 1px solid var(--n-line); border-radius: 16px;

@@ -49,7 +49,7 @@ function showView(name) {
   $("tabTasks").setAttribute("aria-selected", String(name === "tasks"));
   $("tabChat").setAttribute("aria-selected", String(name === "chat"));
   if (name === "tasks" || name === "chat") lastTab = name;
-  if (name === "chat") els.input.focus();
+  if (name === "chat") { els.input.focus(); els.log.scrollTop = els.log.scrollHeight; }
   if (name === "rem") renderReminders();
 }
 
@@ -91,10 +91,82 @@ function greet() {
 function finishCurrent() {
   if (current) {
     current.classList.remove("thinking");
-    current.textContent = current.textContent.trim();
-    if (!current.textContent) current.remove();
+    const text = current.textContent.trim();
+    if (!text) current.remove();
+    else if (current.classList.contains("bot")) {
+      current.replaceChildren(renderMarkdown(text)); // streamed as plain text, formatted when done
+      current.classList.add("md");
+    } else current.textContent = text;
+    els.log.scrollTop = els.log.scrollHeight;
   }
   current = null;
+}
+
+// ---------- minimal, safe markdown (DOM nodes only, never innerHTML) ----------
+// Paragraphs, line breaks, bullet/numbered lists, headings, **bold**, *italic*, `code`, [links](https://…).
+function renderInline(text, parent) {
+  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\((https?:\/\/[^\s)]+)\))|(\*[^*\s][^*]*\*)|(\b_[^_\s][^_]*_\b)/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) parent.append(text.slice(last, m.index));
+    const tok = m[0];
+    let el;
+    if (m[1]) {
+      el = document.createElement("code");
+      el.textContent = tok.slice(1, -1);
+    } else if (m[2]) {
+      el = document.createElement("strong");
+      renderInline(tok.slice(2, -2), el);
+    } else if (m[3]) {
+      el = document.createElement("a");
+      el.href = m[4];
+      el.target = "_blank"; // the app opens these in your real browser
+      el.rel = "noopener noreferrer";
+      el.textContent = tok.slice(1, tok.indexOf("]("));
+    } else {
+      el = document.createElement("em");
+      renderInline(tok.slice(1, -1), el);
+    }
+    parent.append(el);
+    last = m.index + tok.length;
+  }
+  if (last < text.length) parent.append(text.slice(last));
+}
+
+function renderMarkdown(src) {
+  const frag = document.createDocumentFragment();
+  let para = null;
+  let list = null;
+  const endBlocks = () => { para = null; list = null; };
+  for (const raw of src.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { endBlocks(); continue; }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) {
+      endBlocks();
+      const h = document.createElement("p");
+      h.className = "h";
+      renderInline(heading[1], h);
+      frag.append(h);
+      continue;
+    }
+    const item = line.match(/^\s*([-*•]|\d+[.)])\s+(.*)$/);
+    if (item) {
+      para = null;
+      const tag = /\d/.test(item[1]) ? "OL" : "UL";
+      if (!list || list.tagName !== tag) { list = document.createElement(tag); frag.append(list); }
+      const li = document.createElement("li");
+      renderInline(item[2], li);
+      list.append(li);
+      continue;
+    }
+    list = null;
+    if (para) para.append(document.createElement("br"));
+    else { para = document.createElement("p"); frag.append(para); }
+    renderInline(line.trim(), para);
+  }
+  return frag;
 }
 function setBusy(b) {
   busy = b;

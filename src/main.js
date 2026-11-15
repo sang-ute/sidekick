@@ -31,7 +31,7 @@ const cfg = () => srv.getConfig();
 // Mascot window: pet at the bottom-centre, notifier card in the space above it.
 function petSize() {
   const s = SCALE[cfg().mascotSize] || 1;
-  return { width: 320, height: 300 + Math.round(130 * s) };
+  return { width: 340, height: 300 + Math.round(130 * s) }; // card 300 + 20px each side for its shadow
 }
 
 // ---------- window state (position only; settings are in config.json) ----------
