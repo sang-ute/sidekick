@@ -1,0 +1,325 @@
+/* ---------- theme tokens (notifier card) ---------- */
+:root {
+  --scale: 1;
+  --n-bg: #ffffff;
+  --n-text: #14243a;
+  --n-muted: #5b6b80;
+  --n-line: #dbe6f3;
+  --n-chip: #eef5fd;
+  --n-hover: #f3f8fe;
+  --n-accent: #2f7fd8;
+  --n-accent-ink: #ffffff;
+  --n-shadow: 0 6px 16px rgba(20, 36, 58, 0.2);
+  --k-reminder: #f5a524;
+  --k-sync: #2f7fd8;
+  --k-task: #d9a400;
+  --k-error: #e5484d;
+  --k-info: #8e7cf0;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --n-bg: #1b2330;
+    --n-text: #e8f0fa;
+    --n-muted: #9fb0c4;
+    --n-line: #2c394b;
+    --n-chip: #243041;
+    --n-hover: #222d3c;
+    --n-accent: #6cb2ff;
+    --n-accent-ink: #0d1a2b;
+    --n-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+    --k-sync: #6cb2ff;
+    --k-task: #f0c419;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --n-bg: #1b2330;
+  --n-text: #e8f0fa;
+  --n-muted: #9fb0c4;
+  --n-line: #2c394b;
+  --n-chip: #243041;
+  --n-hover: #222d3c;
+  --n-accent: #6cb2ff;
+  --n-accent-ink: #0d1a2b;
+  --n-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  --k-sync: #6cb2ff;
+  --k-task: #f0c419;
+  color-scheme: dark;
+}
+
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: transparent; /* the window itself is transparent: only the pet and card show */
+  font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* ---------- pet ---------- */
+.pet {
+  position: absolute; left: 50%; bottom: 4px; width: 120px; height: 124px;
+  transform: translateX(-50%) scale(var(--scale));
+  transform-origin: 50% 100%;
+  cursor: grab; touch-action: none;
+}
+.pet.dragging { cursor: grabbing; }
+.pet svg { overflow: visible; display: block; }
+
+.shadow { fill: #0b1e36; opacity: 0.2; transform-origin: 60px 117px; }
+.leg, .arm { fill: #2766b8; }
+.arm { transform-box: fill-box; transform-origin: 50% 20%; }
+.armL { transform-origin: 80% 20%; }
+.stem { fill: none; stroke: #2766b8; stroke-width: 3; stroke-linecap: round; }
+.spark { stroke: #9fd8ff; stroke-width: 0.8; transform-box: fill-box; transform-origin: center; animation: twinkle 4s ease-in-out infinite; }
+.spark-glow { opacity: 0.35; transform-box: fill-box; transform-origin: center; }
+.belly { fill: #fff; opacity: 0.2; }
+.eye ellipse { fill: #14243a; }
+.shine { fill: #fff; }
+.eye { transform-box: fill-box; transform-origin: center; animation: blink 5.5s infinite; }
+.eyes { transition: transform 0.12s ease-out; }
+.lid { fill: none; stroke: #14243a; stroke-width: 2.6; stroke-linecap: round; opacity: 0; }
+.cheek { fill: #ff9fb4; opacity: 0.5; }
+.mouth { fill: none; stroke: #14243a; stroke-width: 2.6; stroke-linecap: round; }
+.mouth.talk { fill: #173054; stroke: none; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.mouth.oh { fill: #173054; stroke: none; opacity: 0; }
+.mouth.sad { opacity: 0; }
+.zzz, .dots, .waves, .data, .bell, .rings, .exclaim { opacity: 0; }
+.zzz text { fill: #7f93ab; font: 700 12px "Segoe UI", sans-serif; }
+.dots circle { fill: #7f93ab; }
+.waves circle { fill: none; stroke: #3aa0ff; stroke-width: 2.2; transform-box: fill-box; transform-origin: center; }
+.data circle { fill: #3aa0ff; stroke: #ffffff; stroke-width: 0.9; }
+.bell { transform-origin: 115px 57px; }
+.bell-ring-top { fill: #f2b632; }
+.bell-body { stroke: #c98e12; stroke-width: 0.8; }
+.bell-clapper { fill: #c98e12; }
+.rings path { fill: none; stroke: #ffcf4d; stroke-width: 2; stroke-linecap: round; }
+.exclaim { transform-box: fill-box; transform-origin: 50% 100%; }
+.exclaim circle:first-child { fill: #ff5a5f; }
+.exclaim rect, .exclaim circle:last-child { fill: #fff; }
+
+.body { transform-origin: 60px 110px; animation: breathe 3.2s ease-in-out infinite; }
+
+@keyframes breathe { 50% { transform: translateY(-2px) scaleY(1.02); } }
+@keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+@keyframes twinkle { 0%, 80%, 100% { transform: rotate(0) scale(1); } 90% { transform: rotate(45deg) scale(1.15); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { from { opacity: 1; transform: scale(1); } to { opacity: 0.45; transform: scale(1.25); } }
+@keyframes dot { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@keyframes wave { 50% { transform: rotate(-35deg); } }
+
+/* idle: an occasional hop (class added from JS) */
+.pet.hop .body { animation: hop 0.6s ease-out; }
+.pet.hop .shadow { animation: shadowHop 0.6s ease-out; }
+@keyframes hop { 30% { transform: translateY(-16px) scaleY(1.04); } 60% { transform: translateY(0) scaleY(0.92); } 80% { transform: scaleY(1.02); } }
+@keyframes shadowHop { 30% { transform: scale(0.7); opacity: 0.1; } }
+
+/* hover */
+.pet.idle:hover .armR { animation: wave 0.5s ease-in-out 2; }
+
+/* ---------- thinking: handling a request ---------- */
+.pet.thinking .body { animation: sway 1.6s ease-in-out infinite; }
+.pet.thinking .spark { animation: spin 1.1s linear infinite; }
+.pet.thinking .spark-glow { opacity: 1; animation: pulse 0.9s ease-in-out infinite alternate; }
+.pet.thinking .dots { opacity: 1; }
+.pet.thinking .dots circle { animation: dot 1.2s infinite; }
+.pet.thinking .dots circle:nth-child(2) { animation-delay: 0.2s; }
+.pet.thinking .dots circle:nth-child(3) { animation-delay: 0.4s; }
+.pet.thinking .armL { animation: wave 1.6s ease-in-out infinite; }
+@keyframes sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg) translateY(-1px); } }
+
+/* ---------- fetching: pulling in data ---------- */
+.pet.fetching .body { animation: bounce 0.42s ease-in-out infinite; }
+.pet.fetching .shadow { animation: shadowBounce 0.42s ease-in-out infinite; }
+.pet.fetching .spark { animation: spin 0.6s linear infinite; }
+.pet.fetching .spark-glow { opacity: 1; animation: pulse 0.35s ease-in-out infinite alternate; }
+.pet.fetching .waves { opacity: 1; }
+.pet.fetching .waves circle { animation: radar 1.2s ease-out infinite; }
+.pet.fetching .waves circle:nth-child(2) { animation-delay: 0.4s; }
+.pet.fetching .waves circle:nth-child(3) { animation-delay: 0.8s; }
+.pet.fetching .data { opacity: 1; }
+.pet.fetching .data circle:nth-child(1) { animation: in1 1s ease-in infinite; }
+.pet.fetching .data circle:nth-child(2) { animation: in2 1s ease-in 0.25s infinite; }
+.pet.fetching .data circle:nth-child(3) { animation: in3 1s ease-in 0.5s infinite; }
+.pet.fetching .data circle:nth-child(4) { animation: in4 1s ease-in 0.75s infinite; }
+.pet.fetching .eyes { animation: dart 0.7s ease-in-out infinite alternate; }
+.pet.fetching .smile { opacity: 0; }
+.pet.fetching .oh { opacity: 1; }
+.pet.fetching .arm { animation: pump 0.42s ease-in-out infinite alternate; }
+.pet.fetching .legL { animation: step 0.42s ease-in-out infinite alternate; }
+.pet.fetching .legR { animation: step 0.42s ease-in-out infinite alternate-reverse; }
+@keyframes bounce { 50% { transform: translateY(-5px) scaleY(1.03); } }
+@keyframes shadowBounce { 50% { transform: scale(0.85); opacity: 0.12; } }
+@keyframes radar { from { transform: scale(0.5); opacity: 0.9; } to { transform: scale(2.6); opacity: 0; } }
+@keyframes dart { from { transform: translate(-3.5px, -1px); } to { transform: translate(3.5px, -1px); } }
+@keyframes pump { from { transform: rotate(-12deg); } to { transform: rotate(12deg); } }
+@keyframes step { to { transform: translateY(-3px); } }
+@keyframes in1 { 0% { transform: translate(-44px, 26px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(0, 0); opacity: 0; } }
+@keyframes in2 { 0% { transform: translate(46px, 20px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(0, 0); opacity: 0; } }
+@keyframes in3 { 0% { transform: translate(-30px, -8px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(0, 0); opacity: 0; } }
+@keyframes in4 { 0% { transform: translate(34px, -12px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(0, 0); opacity: 0; } }
+
+/* ---------- talking: mouth flaps ---------- */
+.pet.talking .smile { opacity: 0; }
+.pet.talking .talk { opacity: 1; animation: talk 0.22s ease-in-out infinite alternate; }
+.pet.talking .spark-glow { opacity: 0.8; }
+.pet.talking .body { animation: breathe 1.2s ease-in-out infinite; }
+@keyframes talk { to { transform: scaleY(0.35); } }
+
+/* ---------- happy: bounce + arms up ---------- */
+.pet.happy .body { animation: hop 0.6s ease-out 2; }
+.pet.happy .arm { animation: wave 0.3s ease-in-out 4; }
+.pet.happy .eye ellipse { ry: 5; }
+
+/* ---------- alert: ringing a reminder bell ---------- */
+.pet.alert .body { animation: hop 0.7s ease-out infinite; }
+.pet.alert .shadow { animation: shadowHop 0.7s ease-out infinite; }
+.pet.alert .armL { animation: wave 0.35s ease-in-out infinite; }
+.pet.alert .armR { transform: rotate(-120deg); animation: hold 0.18s ease-in-out infinite alternate; }
+.pet.alert .bell { opacity: 1; animation: ring 0.18s ease-in-out infinite alternate; }
+.pet.alert .rings { opacity: 1; animation: ringFade 0.36s ease-out infinite; }
+.pet.alert .exclaim { opacity: 1; animation: popWobble 0.7s ease-out infinite; }
+.pet.alert .spark-glow { opacity: 1; animation: pulse 0.4s ease-in-out infinite alternate; }
+.pet.alert .smile { opacity: 0; }
+.pet.alert .oh { opacity: 1; }
+@keyframes hold { from { transform: rotate(-114deg); } to { transform: rotate(-126deg); } }
+@keyframes ring { from { transform: rotate(-24deg); } to { transform: rotate(24deg); } }
+@keyframes ringFade { 0% { opacity: 1; } 100% { opacity: 0.15; } }
+@keyframes popWobble { 0% { transform: scale(0.6) rotate(-10deg); } 30% { transform: scale(1.15) rotate(8deg); } 60% { transform: scale(1) rotate(-4deg); } 100% { transform: scale(1) rotate(0); } }
+
+/* ---------- sad (error / Claude Code missing) ---------- */
+.pet.sad .smile { opacity: 0; }
+.pet.sad .sad { opacity: 1; }
+.pet.sad .body { animation: breathe 5s ease-in-out infinite; }
+.pet.sad .spark { animation: none; opacity: 0.6; }
+
+/* ---------- sleeping ---------- */
+.pet.sleeping .eye { opacity: 0; animation: none; }
+.pet.sleeping .lid { opacity: 1; }
+.pet.sleeping .zzz { opacity: 1; }
+.pet.sleeping .zzz text { animation: float 2.4s ease-in-out infinite; }
+.pet.sleeping .zzz text:nth-child(2) { animation-delay: 1.2s; }
+.pet.sleeping .body { animation: breathe 4.5s ease-in-out infinite; }
+.pet.sleeping .eyes { transform: none !important; }
+.pet.sleeping .spark { animation: none; opacity: 0.7; }
+@keyframes float { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(4px, -8px); } }
+
+/* open-task badge: a tiny sticky note (click → notifier) */
+.tasks-badge {
+  position: absolute; left: 0; top: 40px; min-width: 22px; height: 22px; padding: 0 5px;
+  border: 0; background: #fff4b8; color: #6b4b12; border-radius: 3px 8px 8px 8px;
+  font: 700 12px/22px "Segoe UI", sans-serif; text-align: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25); transform: rotate(-6deg);
+}
+.tasks-badge:hover { transform: rotate(0) scale(1.1); }
+
+/* custom skin: same moods, applied to the image */
+.pet.has-skin svg .body, .pet.has-skin svg .shadow { display: none; }
+.skin {
+  position: absolute; left: 50%; bottom: 6px; max-width: 120px; max-height: 120px;
+  transform-origin: 50% 100%; translate: -50% 0; pointer-events: none;
+  animation: breathe 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.25));
+}
+.pet.hop .skin, .pet.happy .skin { animation: hop 0.6s ease-out 2; }
+.pet.alert .skin { animation: hop 0.7s ease-out infinite; }
+.pet.fetching .skin { animation: bounce 0.42s ease-in-out infinite; }
+.pet.thinking .skin { animation: sway 1.6s ease-in-out infinite; }
+.pet.talking .skin { animation: breathe 1.2s ease-in-out infinite; }
+.pet.sleeping .skin { animation: breathe 4.5s ease-in-out infinite; filter: grayscale(0.4) brightness(0.9); }
+
+/* ---------- notifier: chat-bubble mini dashboard ---------- */
+.notifier {
+  position: absolute; left: 20px; right: 20px; /* room for the shadow inside the window */
+  bottom: calc(124px * var(--scale) + 14px);
+  max-height: calc(100vh - 124px * var(--scale) - 36px);
+  display: flex; flex-direction: column;
+  background: var(--n-bg); color: var(--n-text);
+  border: 1px solid var(--n-line); border-radius: 16px;
+  box-shadow: var(--n-shadow);
+  animation: pop 0.22s ease-out;
+  transform-origin: 50% 100%;
+}
+.notifier::after { /* tail pointing at the mascot */
+  content: ""; position: absolute; bottom: -8px; left: 50%; margin-left: -8px;
+  width: 14px; height: 14px; background: var(--n-bg);
+  border-right: 1px solid var(--n-line); border-bottom: 1px solid var(--n-line);
+  transform: rotate(45deg); border-bottom-right-radius: 3px;
+}
+@keyframes pop { from { transform: scale(0.85) translateY(8px); opacity: 0; } }
+
+.n-head { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 8px 5px 12px; }
+.n-avatar { width: 20px; height: 20px; flex: none; }
+.n-avatar-body { fill: #4fa3ee; }
+.n-avatar-eye { fill: #14243a; }
+.n-avatar-spark { fill: #ffffff; stroke: #4fa3ee; stroke-width: 0.6; }
+.n-name { font-weight: 700; }
+.n-status { flex: 1; min-width: 0; color: var(--n-accent); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.n-icon {
+  width: 24px; height: 24px; border: 0; border-radius: 7px; background: none;
+  color: var(--n-muted); font-size: 15px; line-height: 1;
+}
+.n-icon:hover { background: var(--n-hover); color: var(--n-text); }
+
+.n-line {
+  flex: none; margin: 0 10px 6px; padding: 6px 10px; border-radius: 10px;
+  background: var(--n-chip); font-size: 12.5px; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.n-stats { flex: none; display: flex; gap: 6px; padding: 0 10px 7px; }
+.chip {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 3px;
+  padding: 4px 6px; border: 1px solid var(--n-line); border-radius: 999px; background: var(--n-chip);
+  font-size: 11px; color: var(--n-muted); white-space: nowrap; overflow: hidden;
+}
+.chip b { color: var(--n-text); font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+button.chip:hover { border-color: var(--n-accent); }
+
+.n-list {
+  list-style: none; margin: 0; padding: 0 6px; overflow-y: auto; flex: 1 1 auto; min-height: 0;
+  max-height: 196px; /* ~4 rows, scroll for more */
+  border-top: 1px solid var(--n-line);
+}
+.n-item { position: relative; border-bottom: 1px solid var(--n-line); animation: slideIn 0.2s ease-out; }
+.n-item:last-child { border-bottom: 0; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-4px); } }
+.n-row {
+  display: flex; gap: 8px; align-items: flex-start; padding: 5px 26px 5px 6px;
+  border-radius: 8px; color: inherit; text-decoration: none; cursor: pointer;
+  border-left: 3px solid var(--kind, var(--n-line));
+}
+.n-row:hover { background: var(--n-hover); }
+.n-item[data-kind="reminder"] { --kind: var(--k-reminder); }
+.n-item[data-kind="sync"] { --kind: var(--k-sync); }
+.n-item[data-kind="task"] { --kind: var(--k-task); }
+.n-item[data-kind="error"] { --kind: var(--k-error); }
+.n-item[data-kind="info"] { --kind: var(--k-info); }
+.n-ico { flex: none; width: 18px; text-align: center; font-size: 14px; line-height: 18px; }
+.n-text { flex: 1; min-width: 0; }
+.n-title { font-weight: 600; font-size: 12.5px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.n-body { font-size: 11.5px; line-height: 1.3; color: var(--n-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.n-time { flex: none; font-size: 10.5px; color: var(--n-muted); line-height: 18px; }
+.n-x {
+  position: absolute; right: 4px; top: 7px; width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 5px; background: none; color: var(--n-muted); font-size: 13px; line-height: 1;
+  opacity: 0;
+}
+.n-item:hover .n-x { opacity: 1; }
+.n-x:hover { background: var(--n-line); color: var(--n-text); }
+.n-empty { flex: none; margin: 0; padding: 12px; text-align: center; color: var(--n-muted); font-size: 12px; border-top: 1px solid var(--n-line); }
+
+.n-foot { flex: none; display: flex; gap: 6px; padding: 7px 10px 9px; border-top: 1px solid var(--n-line); }
+.n-btn {
+  flex: 1; padding: 5px 10px; border-radius: 10px; border: 1px solid var(--n-line);
+  background: var(--n-bg); font-weight: 600; font-size: 12px;
+}
+.n-btn:hover { background: var(--n-hover); }
+.n-btn.primary { background: var(--n-accent); color: var(--n-accent-ink); border-color: var(--n-accent); }
+.n-btn.primary:hover { filter: brightness(1.06); }
+.n-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* React mounts into #root; make it invisible to layout so the page is laid out as before. */
+#root { display: contents; }
