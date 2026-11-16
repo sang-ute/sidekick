@@ -1,6 +1,6 @@
 [package]
 name = "sidekick"
-version = "1.0.0"
+version = "1.0.1"
 description = "A cute desktop mascot that runs on your own Claude Code"
 authors = ["sang-ute"]
 edition = "2021"

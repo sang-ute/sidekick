@@ -1,10 +1,14 @@
 //! Child processes: finding Claude Code, running CLIs, opening a terminal for sign-ins.
+//!
+//! Every process Sidekick starts goes through `command` or `std_command`, which start it
+//! without a console window. Sidekick is a windowed app with no console of its own, so any
+//! console program started any other way would pop up a terminal window on the desktop.
 
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-/// Windows: don't flash a console window for background commands.
+/// Windows: run a console program with a hidden console (its children inherit it).
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Environment markers other programs must not inherit.
@@ -26,6 +30,11 @@ fn std_command(program: &str) -> std::process::Command {
     for k in STRIP_ENV {
         c.env_remove(k);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(CREATE_NO_WINDOW);
+    }
     c
 }
 
@@ -38,11 +47,6 @@ pub fn find_claude() -> Option<PathBuf> {
     }
     let mut w = std_command("where");
     w.arg("claude");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        w.creation_flags(CREATE_NO_WINDOW);
-    }
     if let Ok(out) = w.output() {
         let text = String::from_utf8_lossy(&out.stdout);
         if let Some(hit) = text.lines().map(str::trim).find(|l| {
@@ -89,7 +93,9 @@ pub async fn run(program: impl AsRef<std::ffi::OsStr>, args: &[&str], timeout_s:
     }
 }
 
-/// Open a visible terminal running a command (for interactive sign-ins). Windows only.
+/// Open a visible terminal running a command (for interactive sign-ins, only when the user
+/// clicks a sign-in button). Windows only. The outer `cmd /c start` stays hidden; `start`
+/// gives the sign-in its own terminal window.
 pub fn open_terminal(args: &[&str]) -> Result<(), String> {
     if !cfg!(windows) {
         return Err("Opening a terminal is only supported on Windows".into());
@@ -98,4 +104,34 @@ pub fn open_terminal(args: &[&str]) -> Result<(), String> {
     c.args(["/c", "start", "Sidekick sign-in", "cmd.exe", "/k"]).args(args);
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     c.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Sidekick has no console, so a process started without CREATE_NO_WINDOW pops up a
+    /// terminal window. Every module must start processes through `command`/`std_command`.
+    #[test]
+    fn processes_only_start_through_the_hidden_helpers() {
+        let modules = [
+            ("claude.rs", include_str!("claude.rs")),
+            ("commands.rs", include_str!("commands.rs")),
+            ("config.rs", include_str!("config.rs")),
+            ("core.rs", include_str!("core.rs")),
+            ("files.rs", include_str!("files.rs")),
+            ("integrations.rs", include_str!("integrations.rs")),
+            ("lib.rs", include_str!("lib.rs")),
+            ("main.rs", include_str!("main.rs")),
+            ("mcp.rs", include_str!("mcp.rs")),
+            ("shell.rs", include_str!("shell.rs")),
+            ("store.rs", include_str!("store.rs")),
+        ];
+        for (name, src) in modules {
+            assert!(!src.contains("Command::new"), "{name} starts a process directly; use proc::command or proc::run");
+        }
+        // proc.rs itself (minus these tests): processes are only created in the two helpers,
+        // and both hide the console.
+        let own = include_str!("proc.rs").split("#[cfg(test)]").next().unwrap();
+        assert_eq!(own.matches("Command::new").count(), 2, "proc.rs creates processes outside command/std_command");
+        assert_eq!(own.matches("creation_flags(CREATE_NO_WINDOW)").count(), 2, "a helper doesn't hide the console");
+    }
 }

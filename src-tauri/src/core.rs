@@ -584,15 +584,32 @@ impl Core {
     }
 }
 
+/// Windows version, e.g. "10.0.26200", asked from the OS directly (no `cmd /c ver`, which
+/// would flash a console window every time the settings window opened).
+#[cfg(windows)]
 fn os_version() -> String {
-    // e.g. "10.0.26200" from the `ver` output; good enough for the About tab.
-    let out = std::process::Command::new("cmd").args(["/c", "ver"]).output();
-    #[cfg(windows)]
-    let _ = ();
-    out.ok()
-        .and_then(|o| {
-            let t = String::from_utf8_lossy(&o.stdout).to_string();
-            regex::Regex::new(r"(\d+\.\d+\.\d+)").unwrap().captures(&t).map(|c| c[1].to_string())
-        })
-        .unwrap_or_default()
+    #[repr(C)]
+    struct OsVersionInfoW {
+        size: u32,
+        major: u32,
+        minor: u32,
+        build: u32,
+        platform: u32,
+        service_pack: [u16; 128],
+    }
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn RtlGetVersion(info: *mut OsVersionInfoW) -> i32;
+    }
+    let mut v = OsVersionInfoW { size: std::mem::size_of::<OsVersionInfoW>() as u32, major: 0, minor: 0, build: 0, platform: 0, service_pack: [0; 128] };
+    // SAFETY: `v` is a correctly sized OSVERSIONINFOW with `size` set, as RtlGetVersion requires.
+    if unsafe { RtlGetVersion(&mut v) } == 0 {
+        format!("{}.{}.{}", v.major, v.minor, v.build)
+    } else {
+        String::new()
+    }
+}
+#[cfg(not(windows))]
+fn os_version() -> String {
+    String::new()
 }

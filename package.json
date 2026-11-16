@@ -1,6 +1,6 @@
 {
   "name": "sidekick",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "A cute desktop mascot that runs on your own Claude Code",

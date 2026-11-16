@@ -111,7 +111,10 @@ fn pet_bounds(pet: &WebviewWindow) -> Option<(f64, f64, f64, f64)> {
 fn test_args(b: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>) -> WebviewWindowBuilder<'_, tauri::Wry, AppHandle> {
     match std::env::var("SIDEKICK_DEVTOOLS_PORT") {
         Ok(p) if is_test_run() && !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => {
+            // Own WebView2 profile, so a test copy can run next to the installed app
+            // (WebView2 won't share a profile between different browser arguments).
             b.additional_browser_args(&format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={p}"))
+                .data_directory(crate::files::data_dir().join("webview-test"))
         }
         _ => b,
     }
