@@ -38,7 +38,7 @@ export function Mascot() {
 
   // Mutable values the event handlers read (they're set up once).
   const r = useRef({
-    mood: (demoMood || "idle") as Mood,
+    mood: demoMood || "idle",
     config: null as Partial<Config> | null,
     panelOpen: false,
     cardOpen: false,
@@ -46,7 +46,7 @@ export function Mascot() {
     lastActivity: Date.now(),
     replyPreview: "",
     dragging: false,
-    timers: { mood: 0, hide: 0, line: 0, hover: 0 } as Record<"mood" | "hide" | "line" | "hover", number>,
+    timers: { mood: 0, hide: 0, line: 0, hover: 0 },
     drag: null as null | { x: number; y: number; moved: boolean },
   }).current;
   const petRef = useRef<HTMLDivElement>(null);
@@ -56,7 +56,7 @@ export function Mascot() {
 
   // ---------- behaviour (stable functions over the refs) ----------
   const ctl = useMemo(() => {
-    const notifierCfg = () => ({ ...DEFAULTS.notifier, ...(r.config?.notifier || {}) });
+    const notifierCfg = () => ({ ...DEFAULTS.notifier, ...r.config?.notifier });
     const setMood = (next: Mood, ms?: number) => {
       if (demoMood && next !== demoMood) return; // demo locks the mood
       clearTimeout(r.timers.mood);
@@ -68,7 +68,7 @@ export function Mascot() {
     const scheduleHide = () => {
       clearTimeout(r.timers.hide);
       if (DEMO === "notifier") return;
-      const secs = Number(notifierCfg().hideAfterSeconds) || 12;
+      const secs = notifierCfg().hideAfterSeconds || 12;
       r.timers.hide = window.setTimeout(() => { if (!r.overCard) hideNotifier(); }, secs * 1000);
     };
     const showNotifier = () => {
@@ -108,7 +108,7 @@ export function Mascot() {
   // ---------- idle life: hop now and then, nap after `sleepAfterMinutes` ----------
   useEffect(() => {
     const id = window.setInterval(() => {
-      const sleepMin = Number(r.config?.sleepAfterMinutes ?? DEFAULTS.sleepAfterMinutes) || 0;
+      const sleepMin = (r.config?.sleepAfterMinutes ?? DEFAULTS.sleepAfterMinutes) || 0;
       if (r.mood === "idle" && sleepMin > 0 && Date.now() - r.lastActivity > sleepMin * 60_000) {
         ctl.setMood("sleeping");
         return;
@@ -164,7 +164,7 @@ export function Mascot() {
         ctl.setLine("Good morning! You have 3 tasks and a reminder in 25 minutes.");
         ctl.showNotifier();
       }
-      return;
+      return undefined;
     }
     const greet = window.setTimeout(() => ctl.setLine("Hi! Click me to chat, drag me anywhere, hover for your dashboard. 👋", { show: true, ms: 8000 }), 800);
     const unsubscribe = subscribe({
@@ -191,7 +191,7 @@ export function Mascot() {
         if (!r.panelOpen) ctl.setLine("Thinking…");
       },
       tool: (name) => {
-        const fetching = FETCH_TOOL.test(String(name || ""));
+        const fetching = FETCH_TOOL.test(name || "");
         ctl.setMood(fetching ? "fetching" : "thinking");
         setNStatus(fetching ? "Fetching data…" : "Working…");
         if (!r.panelOpen && r.cardOpen) ctl.setLine(fetching ? "Fetching data…" : "Working on it…");
@@ -212,7 +212,7 @@ export function Mascot() {
         setNStatus("");
         ctl.setMood("sad", 4000);
         if (!r.panelOpen) {
-          const m = String(msg || "Something went wrong.");
+          const m = msg || "Something went wrong.";
           ctl.setLine(`⚠️ ${m.length > 120 ? m.slice(0, 117) + "…" : m}`, { show: true });
         }
       },
@@ -231,7 +231,7 @@ export function Mascot() {
     const report = () => {
       const rects: { x: number; y: number; w: number; h: number }[] = [];
       for (const el of [petRef.current, badgeRef.current, cardRef.current]) {
-        if (!el || (el as HTMLElement).hidden) continue;
+        if (!el || el.hidden) continue;
         const b = el.getBoundingClientRect();
         if (b.width && b.height) rects.push({ x: b.left, y: b.top, w: b.width, h: b.height });
       }
@@ -258,7 +258,7 @@ export function Mascot() {
     clearTimeout(r.timers.hover);
     r.drag = { x: e.screenX, y: e.screenY, moved: false };
     e.currentTarget.setPointerCapture(e.pointerId);
-    shell.dragStart();
+    void shell.dragStart();
   };
   const onPointerMove = (e: RPointerEvent<HTMLDivElement>) => {
     const d = r.drag;
@@ -269,7 +269,7 @@ export function Mascot() {
     d.moved = true;
     r.dragging = true;
     setDragging(true);
-    shell.dragMove(dx, dy);
+    void shell.dragMove(dx, dy);
   };
   const onPointerUp = (e: RPointerEvent<HTMLDivElement>) => {
     const d = r.drag;
@@ -278,17 +278,17 @@ export function Mascot() {
     r.dragging = false;
     setDragging(false);
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    shell.dragEnd();
+    void shell.dragEnd();
     if (!d.moved) {
       if (r.mood === "sleeping" || r.mood === "alert") ctl.setMood("idle");
       ctl.hideNotifier();
-      shell.togglePanel();
+      void shell.togglePanel();
     }
   };
 
   // ---------- derived ----------
   const openCount = tasks.filter((t) => !t.done).length;
-  const nextReminder = reminders.map((x) => x.dueAt).filter((d) => new Date(d).getTime() > Date.now() - 60_000).sort()[0];
+  const nextReminder = reminders.map((x) => x.dueAt).filter((d) => new Date(d).getTime() > Date.now() - 60_000).toSorted()[0];
   const lastSync = notifications.find((n) => n.kind === "sync");
   const petClass = ["pet", mood, hop && "hop", dragging && "dragging", skin && "has-skin"].filter(Boolean).join(" ");
 
@@ -310,7 +310,7 @@ export function Mascot() {
         onMouseLeave={() => {
           r.overCard = false;
           if (r.cardOpen && DEMO !== "notifier") {
-            const secs = Number({ ...DEFAULTS.notifier, ...(r.config?.notifier || {}) }.hideAfterSeconds) || 12;
+            const secs = { ...DEFAULTS.notifier, ...r.config?.notifier }.hideAfterSeconds || 12;
             clearTimeout(r.timers.hide);
             r.timers.hide = window.setTimeout(() => { if (!r.overCard) ctl.hideNotifier(); }, secs * 1000);
           }
@@ -325,14 +325,14 @@ export function Mascot() {
           </svg>
           <strong className="n-name">Sidekick</strong>
           <span className="n-status">{nStatus}</span>
-          <button className="n-icon" type="button" title="Settings" aria-label="Settings" onClick={() => { ctl.hideNotifier(); shell.openSettings(); }}>⚙</button>
+          <button className="n-icon" type="button" title="Settings" aria-label="Settings" onClick={() => { ctl.hideNotifier(); void shell.openSettings(); }}>⚙</button>
           <button className="n-icon" type="button" title="Hide" aria-label="Hide" onClick={() => ctl.hideNotifier()}>×</button>
         </header>
 
         <p className="n-line" hidden={lineHidden}>{line}</p>
 
         <div className="n-stats">
-          <button className="chip" type="button" title="Open tasks" onClick={() => { ctl.hideNotifier(); shell.openPanel(); }}>
+          <button className="chip" type="button" title="Open tasks" onClick={() => { ctl.hideNotifier(); void shell.openPanel(); }}>
             📌 <b>{openCount}</b> <span>{openCount === 1 ? "task" : "tasks"}</span>
           </button>
           <span className="chip" title="Next reminder">⏰ <b>{nextReminder ? until(nextReminder) : "none"}</b></span>
@@ -358,7 +358,10 @@ export function Mascot() {
                 {hasLink ? (
                   <a className="n-row" href={n.link} target="_blank" rel="noopener noreferrer">{content}</a>
                 ) : (
-                  <div className="n-row" onClick={() => { ctl.hideNotifier(); shell.openPanel(); }}>{content}</div>
+                  // The mascot window never takes keyboard focus (it would steal it from your apps), so
+                  // these rows are pointer-only; the chat window has the keyboard-friendly version.
+                  // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                  <div className="n-row" onClick={() => { ctl.hideNotifier(); void shell.openPanel(); }}>{content}</div>
                 )}
                 <button className="n-x" type="button" title="Dismiss" onClick={(e) => { e.preventDefault(); e.stopPropagation(); dismiss(n.id); }}>×</button>
               </li>
@@ -368,7 +371,7 @@ export function Mascot() {
         <p className="n-empty" hidden={notifications.length > 0}>No notifications yet. I'll pin news here.</p>
 
         <footer className="n-foot">
-          <button className="n-btn primary" type="button" onClick={() => { ctl.hideNotifier(); shell.openPanel(); }}>Open chat</button>
+          <button className="n-btn primary" type="button" onClick={() => { ctl.hideNotifier(); void shell.openPanel(); }}>Open chat</button>
           <button
             className="n-btn"
             type="button"
@@ -388,7 +391,7 @@ export function Mascot() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onContextMenu={(e) => { e.preventDefault(); shell.showMenu(); }}
+        onContextMenu={(e) => { e.preventDefault(); void shell.showMenu(); }}
         onAnimationEnd={(e) => { if (e.animationName === "hop") setHop(false); }}
       >
         <svg viewBox="0 0 120 124" width="120" height="124" aria-hidden="true">

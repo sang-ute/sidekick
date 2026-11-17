@@ -25,7 +25,7 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command 
     c
 }
 
-fn std_command(program: &str) -> std::process::Command {
+pub(crate) fn std_command(program: &str) -> std::process::Command {
     let mut c = std::process::Command::new(program);
     for k in STRIP_ENV {
         c.env_remove(k);
@@ -69,7 +69,12 @@ pub struct RunResult {
 }
 
 /// Run a command and collect its output. Never fails; check `ok`.
-pub async fn run(program: impl AsRef<std::ffi::OsStr>, args: &[&str], timeout_s: u64, cwd: Option<&std::path::Path>) -> RunResult {
+pub async fn run(
+    program: impl AsRef<std::ffi::OsStr>,
+    args: &[&str],
+    timeout_s: u64,
+    cwd: Option<&std::path::Path>,
+) -> RunResult {
     let mut c = command(program);
     c.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if let Some(d) = cwd {
@@ -78,7 +83,12 @@ pub async fn run(program: impl AsRef<std::ffi::OsStr>, args: &[&str], timeout_s:
     let child = match c.spawn() {
         Ok(ch) => ch,
         Err(e) => {
-            return RunResult { ok: false, missing: e.kind() == std::io::ErrorKind::NotFound, stdout: String::new(), stderr: e.to_string() }
+            return RunResult {
+                ok: false,
+                missing: e.kind() == std::io::ErrorKind::NotFound,
+                stdout: String::new(),
+                stderr: e.to_string(),
+            }
         }
     };
     match tokio::time::timeout(Duration::from_secs(timeout_s), child.wait_with_output()).await {
@@ -112,22 +122,22 @@ mod tests {
     /// terminal window. Every module must start processes through `command`/`std_command`.
     #[test]
     fn processes_only_start_through_the_hidden_helpers() {
-        let modules = [
-            ("claude.rs", include_str!("claude.rs")),
-            ("commands.rs", include_str!("commands.rs")),
-            ("config.rs", include_str!("config.rs")),
-            ("core.rs", include_str!("core.rs")),
-            ("files.rs", include_str!("files.rs")),
-            ("integrations.rs", include_str!("integrations.rs")),
-            ("lib.rs", include_str!("lib.rs")),
-            ("main.rs", include_str!("main.rs")),
-            ("mcp.rs", include_str!("mcp.rs")),
-            ("shell.rs", include_str!("shell.rs")),
-            ("store.rs", include_str!("store.rs")),
-        ];
-        for (name, src) in modules {
-            assert!(!src.contains("Command::new"), "{name} starts a process directly; use proc::command or proc::run");
+        // Every module, including ones added later.
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&src).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if path.extension().is_some_and(|e| e == "rs") && name != "proc.rs" {
+                let text = std::fs::read_to_string(&path).unwrap();
+                assert!(
+                    !text.contains("Command::new"),
+                    "{name} starts a process directly; use proc::command, proc::std_command or proc::run"
+                );
+                checked += 1;
+            }
         }
+        assert!(checked >= 10, "expected to check every module, checked {checked}");
         // proc.rs itself (minus these tests): processes are only created in the two helpers,
         // and both hide the console.
         let own = include_str!("proc.rs").split("#[cfg(test)]").next().unwrap();

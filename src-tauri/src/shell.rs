@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_notification::NotificationExt;
@@ -113,8 +115,10 @@ fn test_args(b: WebviewWindowBuilder<'_, tauri::Wry, AppHandle>) -> WebviewWindo
         Ok(p) if is_test_run() && !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => {
             // Own WebView2 profile, so a test copy can run next to the installed app
             // (WebView2 won't share a profile between different browser arguments).
-            b.additional_browser_args(&format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={p}"))
-                .data_directory(crate::files::data_dir().join("webview-test"))
+            b.additional_browser_args(&format!(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={p}"
+            ))
+            .data_directory(crate::files::data_dir().join("webview-test"))
         }
         _ => b,
     }
@@ -311,7 +315,9 @@ fn spawn_pointer_loop(app: AppHandle) {
             if !pet.is_visible().unwrap_or(false) {
                 continue;
             }
-            let (Ok(cur), Ok(pos), Ok(size), Ok(scale)) = (app.cursor_position(), pet.outer_position(), pet.outer_size(), pet.scale_factor()) else {
+            let (Ok(cur), Ok(pos), Ok(size), Ok(scale)) =
+                (app.cursor_position(), pet.outer_position(), pet.outer_size(), pet.scale_factor())
+            else {
                 continue;
             };
             let lx = (cur.x - pos.x as f64) / scale;
@@ -320,7 +326,11 @@ fn spawn_pointer_loop(app: AppHandle) {
             let pet_scale = cfg(&app).mascot_scale();
             let (want_ignore, eyes_changed, eyes) = {
                 let mut s = shell(&app);
-                let inside = lx >= 0.0 && ly >= 0.0 && lx < w && ly < h && s.rects.iter().any(|r| lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h);
+                let inside = lx >= 0.0
+                    && ly >= 0.0
+                    && lx < w
+                    && ly < h
+                    && s.rects.iter().any(|r| lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h);
                 let want_ignore = !(inside || s.dragging);
                 let eyes = ((lx - w / 2.0).round() as i64, (ly - (h - 66.0 * pet_scale)).round() as i64);
                 let changed = tick % 2 == 0 && eyes != s.last_eyes;
@@ -365,13 +375,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_menu(app)?;
-    let mut tray = TrayIconBuilder::with_id("main").tooltip("Sidekick").menu(&menu).show_menu_on_left_click(false).on_tray_icon_event(
-        |tray, event| {
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("Sidekick")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                 toggle_panel(tray.app_handle());
             }
-        },
-    );
+        });
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());
     }

@@ -11,7 +11,7 @@ export function subscribe(handlers: Handlers): () => void {
   let stopped = false;
   let unlisten: (() => void) | null = null;
   // Listen first, then take the snapshot, so nothing that happens in between is missed.
-  listen<{ type: EventName; data: unknown }>("sidekick", (e) => {
+  void listen<{ type: EventName; data: unknown }>("sidekick", (e) => {
     const fn = handlers[e.payload.type] as ((d: unknown) => void) | undefined;
     fn?.(e.payload.data);
   }).then(async (u) => {
@@ -31,10 +31,11 @@ export function subscribe(handlers: Handlers): () => void {
 }
 
 /** Desktop-shell events aimed at one window (panel open/closed, cursor offset for the eyes). */
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- the caller names the payload type
 export function onShell<T>(name: "panel-state" | "pet-cursor", fn: (data: T) => void): () => void {
   let un: (() => void) | null = null;
   let stopped = false;
-  listen<T>(name, (e) => fn(e.payload)).then((u) => (stopped ? u() : (un = u)));
+  void listen<T>(name, (e) => fn(e.payload)).then((u) => (stopped ? u() : (un = u)));
   return () => {
     stopped = true;
     un?.();

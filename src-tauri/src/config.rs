@@ -187,7 +187,8 @@ fn int(v: &Value, min: u64, max: u64, name: &str) -> Result<u32, String> {
     }
 }
 fn str_list(v: &Value, name: &str, re: &Regex) -> Result<Vec<String>, String> {
-    let arr = v.as_array().filter(|a| a.len() <= 50).ok_or_else(|| format!("{name} must be a list of up to 50 items"))?;
+    let arr =
+        v.as_array().filter(|a| a.len() <= 50).ok_or_else(|| format!("{name} must be a list of up to 50 items"))?;
     let mut out: Vec<String> = vec![];
     for s in arr {
         let t = s.as_str().map(str::trim).unwrap_or("");
@@ -251,7 +252,9 @@ fn mcp_servers(v: &Value) -> Result<BTreeMap<String, McpServer>, String> {
                 }
                 let args = match s.get("args") {
                     None | Some(Value::Null) => vec![],
-                    Some(Value::Array(a)) if a.len() <= 50 && a.iter().all(|x| x.as_str().is_some_and(|t| t.len() <= 500)) => {
+                    Some(Value::Array(a))
+                        if a.len() <= 50 && a.iter().all(|x| x.as_str().is_some_and(|t| t.len() <= 500)) =>
+                    {
                         a.iter().filter_map(|x| x.as_str().map(String::from)).collect()
                     }
                     _ => return Err(format!("MCP server \"{name}\" has invalid arguments")),
@@ -306,7 +309,9 @@ pub fn validate_patch(patch: &Value, current: &Config) -> Result<Config, String>
                 }
             }
             "mcpServers" => c.mcp_servers = mcp_servers(v)?,
-            "extraAllowedTools" => c.extra_allowed_tools = str_list(v, "extraAllowedTools", re!(r"^[A-Za-z0-9_*().:\- ]{1,100}$"))?,
+            "extraAllowedTools" => {
+                c.extra_allowed_tools = str_list(v, "extraAllowedTools", re!(r"^[A-Za-z0-9_*().:\- ]{1,100}$"))?
+            }
             "youtubeChannels" => c.youtube_channels = str_list(v, "youtubeChannels", re!(r#"^[^\s"'<>]{2,100}$"#))?,
             "dailySyncTime" => {
                 c.daily_sync_time = match v {
@@ -332,7 +337,9 @@ pub fn validate_patch(patch: &Value, current: &Config) -> Result<Config, String>
             }
             "shortcut" => {
                 let parts: Vec<&str> = v.as_str().unwrap_or("").split('+').map(str::trim).collect();
-                let part_re = re!(r"(?i)^(Control|Ctrl|CommandOrControl|CmdOrCtrl|Alt|Option|Shift|Super|Meta|[A-Z0-9]|F[1-9]|F1[0-9]|F2[0-4]|Space|Tab|Enter|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Plus|Escape|Esc)$");
+                let part_re = re!(
+                    r"(?i)^(Control|Ctrl|CommandOrControl|CmdOrCtrl|Alt|Option|Shift|Super|Meta|[A-Z0-9]|F[1-9]|F1[0-9]|F2[0-4]|Space|Tab|Enter|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Plus|Escape|Esc)$"
+                );
                 if parts.len() < 2 || parts.len() > 4 || !parts.iter().all(|p| part_re.is_match(p)) {
                     return Err("shortcut should look like \"Control+Shift+Space\"".into());
                 }
@@ -351,7 +358,9 @@ mod tests {
     #[test]
     fn rejects_reserved_and_bad_values() {
         let c = Config::default();
-        assert!(validate_patch(&json!({"mcpServers": {"sidekick": {"command": "x"}}}), &c).unwrap_err().contains("reserved"));
+        assert!(validate_patch(&json!({"mcpServers": {"sidekick": {"command": "x"}}}), &c)
+            .unwrap_err()
+            .contains("reserved"));
         assert!(validate_patch(&json!({"shortcut": "banana"}), &c).is_err());
         assert!(validate_patch(&json!({"nope": 1}), &c).unwrap_err().contains("Unknown"));
         assert!(validate_patch(&json!({"sleepAfterMinutes": 1.5}), &c).is_err());
@@ -361,11 +370,16 @@ mod tests {
     #[test]
     fn applies_partial_nested_values() {
         let c = Config::default();
-        let n = validate_patch(&json!({"notifier": {"hideAfterSeconds": 20}, "integrations": {"web": false}}), &c).unwrap();
+        let n =
+            validate_patch(&json!({"notifier": {"hideAfterSeconds": 20}, "integrations": {"web": false}}), &c).unwrap();
         assert_eq!(n.notifier.hide_after_seconds, 20);
         assert!(n.notifier.auto_show);
         assert!(!n.integrations.web && n.integrations.github);
-        let m = validate_patch(&json!({"mcpServers": {"fs": {"type": "stdio", "command": "npx", "args": ["-y", "x"]}}}), &c).unwrap();
+        let m = validate_patch(
+            &json!({"mcpServers": {"fs": {"type": "stdio", "command": "npx", "args": ["-y", "x"]}}}),
+            &c,
+        )
+        .unwrap();
         assert!(matches!(m.mcp_servers.get("fs"), Some(McpServer::Stdio { .. })));
         let s = validate_patch(&json!({"shortcut": "ctrl + shift + k"}), &c).unwrap();
         assert_eq!(s.shortcut, "ctrl+shift+k");
@@ -385,7 +399,8 @@ mod tests {
     fn load_keeps_good_keys_when_one_is_bad() {
         let dir = std::env::temp_dir().join(format!("sidekick-cfg-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("config.json"), r#"{"theme":"dark","effort":"nonsense","youtubeChannels":["@a"]}"#).unwrap();
+        std::fs::write(dir.join("config.json"), r#"{"theme":"dark","effort":"nonsense","youtubeChannels":["@a"]}"#)
+            .unwrap();
         let c = load(&dir);
         assert_eq!(c.theme, "dark");
         assert_eq!(c.effort, "low");

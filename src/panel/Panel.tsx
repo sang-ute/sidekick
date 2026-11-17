@@ -81,6 +81,7 @@ function reducer(s: Chat, a: Action): Chat {
     case "ev": return apply(s, a.type, a.data);
     case "reset": return greet();
     case "error": return add(s, "error", a.text);
+    default: return s;
   }
 }
 
@@ -144,7 +145,7 @@ export function Panel() {
 
   const showErr = useCallback((e: unknown) => dispatch({ t: "error", text: e instanceof Error ? e.message : String(e) }), []);
   const loadReminders = useCallback(() => {
-    api.reminders().then((l) => setReminders([...l].sort((a, b) => a.dueAt.localeCompare(b.dueAt)))).catch(() => setReminders([]));
+    api.reminders().then((l) => setReminders(l.toSorted((a, b) => a.dueAt.localeCompare(b.dueAt)))).catch(() => setReminders([]));
   }, []);
 
   const showView = useCallback((name: View) => {
@@ -161,10 +162,10 @@ export function Panel() {
         dispatch({ t: "hello", history: h.history });
         setStatus(h.status);
         setTasks(h.tasks || []);
-        setReminders([...(h.reminders || [])].sort((a, b) => a.dueAt.localeCompare(b.dueAt)));
+        setReminders((h.reminders || []).toSorted((a, b) => a.dueAt.localeCompare(b.dueAt)));
       },
       tasks: (l) => setTasks(l),
-      reminders: (l) => setReminders([...l].sort((a, b) => a.dueAt.localeCompare(b.dueAt))),
+      reminders: (l) => setReminders(l.toSorted((a, b) => a.dueAt.localeCompare(b.dueAt))),
       config: (c) => applyTheme(c),
       status: (s) => setStatus(s),
       reset: () => dispatch({ t: "reset" }),
@@ -190,7 +191,7 @@ export function Panel() {
 
   // Esc closes the window.
   useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") shell.closePanel(); };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") void shell.closePanel(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
@@ -231,8 +232,8 @@ export function Panel() {
     try { await api.sync(); } catch (err) { showErr(err); } finally { setSyncing(false); }
   };
 
-  const open = tasks.filter((t) => !t.done).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || b.createdAt.localeCompare(a.createdAt));
-  const done = tasks.filter((t) => t.done).sort((a, b) => (b.doneAt || "").localeCompare(a.doneAt || ""));
+  const open = tasks.filter((t) => !t.done).toSorted((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || b.createdAt.localeCompare(a.createdAt));
+  const done = tasks.filter((t) => t.done).toSorted((a, b) => (b.doneAt || "").localeCompare(a.doneAt || ""));
 
   return (
     <section id="panel" className="panel">
@@ -252,12 +253,12 @@ export function Panel() {
         </div>
       </header>
 
-      <nav className="tabs" role="tablist">
+      <div className="tabs" role="tablist">
         <button role="tab" className="tab" aria-selected={view === "tasks"} onClick={() => showView("tasks")}>
           📌 Tasks <span className="count" hidden={open.length === 0}>{open.length}</span>
         </button>
         <button role="tab" className="tab" aria-selected={view === "chat"} onClick={() => showView("chat")}>💬 Chat</button>
-      </nav>
+      </div>
 
       <div className="view board" hidden={view !== "tasks"}>
         <div className="board-head">

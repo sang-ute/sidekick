@@ -29,9 +29,17 @@ regex = "1.13.1"
 chrono = "0.4.45"
 base64 = "0.23.1"
 
+[features]
+# Test builds only (integration and end-to-end tests): a stand-in for the Claude Code CLI,
+# built into this executable. Release builds never enable it.
+test-support = []
+
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

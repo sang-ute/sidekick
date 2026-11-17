@@ -1,15 +1,18 @@
 //! Sidekick: a desktop mascot that runs on your own Claude Code.
 
-mod claude;
+// Public so the integration tests in `tests/` can use them; only main.rs links this crate.
+pub mod claude;
 mod commands;
-mod config;
+pub mod config;
 mod core;
-mod files;
+#[cfg(feature = "test-support")]
+pub mod fake_claude;
+pub mod files;
 mod integrations;
 pub mod mcp;
 mod proc;
 mod shell;
-mod store;
+pub mod store;
 
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, RunEvent};

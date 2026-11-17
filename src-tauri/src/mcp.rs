@@ -150,7 +150,9 @@ async fn call(dir: &Path, disabled: &HashSet<String>, name: &str, a: &Value) -> 
             ok(integrations::youtube_latest(dir, &config::load(dir).youtube_channels, days).await)
         }
         "youtube_follow" if !disabled.contains("youtube") => {
-            let Some(channel) = s(a, "channel").map(str::trim).filter(|c| !c.is_empty()) else { return fail("channel is required") };
+            let Some(channel) = s(a, "channel").map(str::trim).filter(|c| !c.is_empty()) else {
+                return fail("channel is required");
+            };
             let mut cfg = config::load(dir);
             if a.get("unfollow").and_then(Value::as_bool).unwrap_or(false) {
                 cfg.youtube_channels.retain(|c| !c.eq_ignore_ascii_case(channel));
@@ -192,7 +194,9 @@ async fn handle(dir: &Path, disabled: &HashSet<String>, msg: &Value) -> Option<V
         }
         _ if id.is_none() => return None, // notifications (e.g. notifications/initialized)
         _ => {
-            return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("Method not found: {method}") } }));
+            return Some(
+                json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("Method not found: {method}") } }),
+            );
         }
     };
     id.map(|id| json!({ "jsonrpc": "2.0", "id": id, "result": result }))
@@ -200,7 +204,12 @@ async fn handle(dir: &Path, disabled: &HashSet<String>, msg: &Value) -> Option<V
 
 pub fn run() {
     let dir = data_dir();
-    let disabled: HashSet<String> = std::env::var("SIDEKICK_DISABLED").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();
+    let disabled: HashSet<String> = std::env::var("SIDEKICK_DISABLED")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
@@ -212,7 +221,9 @@ pub fn run() {
         }
         let reply = match serde_json::from_str::<Value>(line) {
             Ok(msg) => rt.block_on(handle(&dir, &disabled, &msg)),
-            Err(_) => Some(json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": "Parse error" } })),
+            Err(_) => {
+                Some(json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": "Parse error" } }))
+            }
         };
         if let Some(r) = reply {
             if writeln!(out, "{r}").and_then(|_| out.flush()).is_err() {

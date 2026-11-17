@@ -1,0 +1,117 @@
+# Continuous integration: every pull request and every push to master.
+#
+#   checks   (Linux, cheap)  type check, lint the UI, UI tests, Rust formatting, workflow lint,
+#                            dependency audits
+#   windows  (Windows)       clippy, Rust unit + integration tests, build the app, end-to-end
+#                            tests against its real windows with a fake Claude Code
+name: CI
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ["**/*.md", "docs/**", "assets/**"]
+  pull_request:
+    paths-ignore: ["**/*.md", "docs/**", "assets/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.100.0" # bump together with your local toolchain
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    name: Lint, types, UI tests, audits
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint the UI (oxlint, type-aware)
+        run: npm run lint:ui
+      - name: UI unit and component tests (Vitest)
+        run: npm run test:ui
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt
+          rustup default "$RUST_VERSION"
+      - name: Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Lint the workflows (actionlint)
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+      - name: Audit the npm packages the app ships
+        run: npm audit --omit=dev --audit-level=high
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-audit
+      - name: Audit the Rust crates
+        run: cargo audit --file src-tauri/Cargo.lock
+
+  windows:
+    name: Rust, integration and end-to-end tests (Windows)
+    needs: checks
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      # One feature set for clippy, tests and the e2e build, so they share compiled crates.
+      FEATURES: tauri/custom-protocol,test-support
+    defaults:
+      run:
+        shell: bash # Git Bash; passes `--` through to cargo unchanged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Build the UI (embedded in the app)
+        run: npm run vite:build
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features "$FEATURES" -- -D warnings
+      - name: Rust unit and integration tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --features "$FEATURES"
+      - name: Build the app for the end-to-end tests
+        run: cargo build --manifest-path src-tauri/Cargo.toml --features "$FEATURES"
+      - name: Make sure the WebView2 runtime is installed
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          if (Test-Path $key) {
+            "WebView2 $((Get-ItemProperty $key).pv)"
+          } else {
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile "$env:RUNNER_TEMP\webview2.exe"
+            Start-Process "$env:RUNNER_TEMP\webview2.exe" -ArgumentList '/silent', '/install' -Wait
+          }
+      - name: End-to-end tests
+        run: npm run e2e
+      - name: Keep the e2e results, screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: e2e-artifacts
+          retention-days: 7
+          if-no-files-found: ignore

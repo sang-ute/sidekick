@@ -81,7 +81,46 @@ pub fn parse_ms(s: &str) -> Option<i64> {
 }
 
 pub fn iso_from_ms(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms)
-        .unwrap_or_default()
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    chrono::DateTime::from_timestamp_millis(ms).unwrap_or_default().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_files_round_trip_without_leftovers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("data.json");
+        write_json(&path, &serde_json::json!({ "a": [1, 2], "b": "ü" })).unwrap();
+        write_json(&path, &serde_json::json!({ "a": [3] })).unwrap();
+        let v: serde_json::Value = read_json(&path).unwrap();
+        assert_eq!(v, serde_json::json!({ "a": [3] }));
+        let names: Vec<_> =
+            std::fs::read_dir(path.parent().unwrap()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, ["data.json"], "temp files are renamed into place");
+        assert!(read_json::<serde_json::Value>(&dir.path().join("missing.json")).is_none());
+        std::fs::write(dir.path().join("broken.json"), "{ not json").unwrap();
+        assert!(read_json::<serde_json::Value>(&dir.path().join("broken.json")).is_none());
+    }
+
+    #[test]
+    fn ids_are_short_and_varied() {
+        let ids: std::collections::HashSet<String> = (0..500).map(|_| new_id(6)).collect();
+        assert_eq!(ids.len(), 500);
+        assert!(ids.iter().all(|i| i.len() == 6 && i.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase())));
+        let h = hex_id();
+        assert!(h.len() == 8 && h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn times_parse_with_any_offset() {
+        let a = parse_ms("2026-11-16T17:30:00+07:00").unwrap();
+        let b = parse_ms(" 2026-11-16T10:30:00Z ").unwrap();
+        assert_eq!(a, b);
+        assert_eq!(iso_from_ms(a), "2026-11-16T10:30:00.000Z");
+        assert!(parse_ms("tomorrow at 9").is_none());
+        assert!(parse_ms("2026-11-16 10:30").is_none(), "an offset is required");
+        assert!(parse_ms(&now_iso()).is_some());
+    }
 }

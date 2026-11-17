@@ -12,7 +12,16 @@
     "vite:dev": "vite",
     "vite:build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "lint": "npm run lint:ui && npm run lint:rust",
+    "lint:ui": "oxlint --type-aware --deny-warnings src scripts vite.config.ts vitest.config.ts",
+    "lint:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features test-support -- -D warnings",
+    "format": "cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "test": "npm run test:ui && npm run test:rust",
+    "test:ui": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --features test-support",
+    "e2e:build": "npm run vite:build && cargo build --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol,test-support",
+    "e2e": "node scripts/e2e/run.mjs",
+    "check": "npm run lint && npm run typecheck && npm test && npm run e2e:build && npm run e2e",
     "icon": "node scripts/make-icon.cjs && tauri icon assets/icon.png"
   },
   "dependencies": {
@@ -22,10 +31,17 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.12",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "jsdom": "^29.1.1",
+    "oxlint": "^1.94.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "typescript": "^7.0.2",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
   }
 }

@@ -210,12 +210,29 @@ mod tests {
     #[test]
     fn tasks_dedupe_by_link_and_update() {
         let d = tmp("tasks");
-        let (a, dup) = add_task(&d, NewTask { title: "Review PR".into(), source: Some("github".into()), link: Some("https://x/1".into()), ..Default::default() });
+        let (a, dup) = add_task(
+            &d,
+            NewTask {
+                title: "Review PR".into(),
+                source: Some("github".into()),
+                link: Some("https://x/1".into()),
+                ..Default::default()
+            },
+        );
         assert!(!dup);
-        let (b, dup2) = add_task(&d, NewTask { title: "again".into(), link: Some("https://x/1".into()), ..Default::default() });
+        let (b, dup2) =
+            add_task(&d, NewTask { title: "again".into(), link: Some("https://x/1".into()), ..Default::default() });
         assert!(dup2);
         assert_eq!(a.id, b.id);
-        let (c, _) = add_task(&d, NewTask { title: "odd".into(), source: Some("weird".into()), link: Some("javascript:x".into()), ..Default::default() });
+        let (c, _) = add_task(
+            &d,
+            NewTask {
+                title: "odd".into(),
+                source: Some("weird".into()),
+                link: Some("javascript:x".into()),
+                ..Default::default()
+            },
+        );
         assert_eq!(c.source, "other");
         assert_eq!(c.link, "");
         assert!(update_task(&d, &a.id, Some(true), None).unwrap().done);
@@ -246,6 +263,66 @@ mod tests {
         let d = tmp("compat");
         std::fs::write(d.join("tasks.json"), r#"[{"id":"a1","title":"T","notes":"","source":"gmail","link":"","due":null,"done":false,"createdAt":"2026-11-15T17:24:58.872Z","doneAt":null}]"#).unwrap();
         assert_eq!(load_tasks(&d)[0].source, "gmail");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn ticking_off_and_back_and_renaming() {
+        let d = tmp("update");
+        let (t, _) = add_task(&d, NewTask { title: "Draft CV".into(), ..Default::default() });
+        assert_eq!(t.source, "me");
+        let done = update_task(&d, &t.id, Some(true), None).unwrap();
+        assert!(done.done && done.done_at.is_some());
+        let undone = update_task(&d, &t.id, Some(false), Some("Draft CV v2")).unwrap();
+        assert!(!undone.done && undone.done_at.is_none());
+        assert_eq!(undone.title, "Draft CV v2");
+        assert!(update_task(&d, "missing", Some(true), None).is_none());
+        assert!(!remove_task(&d, "missing"));
+        // A done task with the same link doesn't block adding it again.
+        let (a, _) =
+            add_task(&d, NewTask { title: "PR".into(), link: Some("https://x/2".into()), ..Default::default() });
+        update_task(&d, &a.id, Some(true), None).unwrap();
+        let (_, dup) =
+            add_task(&d, NewTask { title: "PR".into(), link: Some("https://x/2".into()), ..Default::default() });
+        assert!(!dup);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn old_finished_tasks_are_pruned() {
+        let d = tmp("prune");
+        let now = chrono::Utc::now().timestamp_millis();
+        let task = |id: &str, done: bool, done_ago_days: i64| Task {
+            id: id.into(),
+            title: id.into(),
+            notes: String::new(),
+            source: "me".into(),
+            link: String::new(),
+            due: None,
+            done,
+            created_at: now_iso(),
+            done_at: done.then(|| iso_from_ms(now - done_ago_days * 86_400_000)),
+        };
+        write_json(&tasks_file(&d), &[task("open", false, 0), task("recent", true, 2), task("old", true, 9)]).unwrap();
+        prune_tasks(&d);
+        let ids: Vec<String> = load_tasks(&d).into_iter().map(|t| t.id).collect();
+        assert_eq!(ids, ["open", "recent"]);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn weekly_reminders_skip_missed_weeks() {
+        let d = tmp("weekly");
+        let now = chrono::Utc::now().timestamp_millis();
+        let first = now - 15 * 86_400_000; // missed two weeks while the PC was off
+        let r = add_reminder(&d, "review goals", &iso_from_ms(first), Some("weekly")).unwrap();
+        assert_eq!(r.repeat, "weekly");
+        assert_eq!(take_due_reminders(&d, now).len(), 1, "fires once, not once per missed week");
+        let next = parse_ms(&load_reminders(&d)[0].due_at).unwrap();
+        assert_eq!(next, first + 3 * 7 * 86_400_000);
+        assert!(take_due_reminders(&d, now).is_empty());
+        assert!(remove_reminder(&d, &r.id));
+        assert!(load_reminders(&d).is_empty());
         let _ = std::fs::remove_dir_all(d);
     }
 }

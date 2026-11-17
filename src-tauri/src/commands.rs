@@ -111,7 +111,9 @@ pub async fn mcp_login(core: C<'_>, name: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_target(app: AppHandle, core: C, target: String) -> Result<(), String> {
     match target.as_str() {
-        "connectors" => app.opener().open_url("https://claude.ai/settings/connectors", None::<&str>).map_err(|e| e.to_string()),
+        "connectors" => {
+            app.opener().open_url("https://claude.ai/settings/connectors", None::<&str>).map_err(|e| e.to_string())
+        }
         "dataFolder" => app.opener().open_path(core.dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string()),
         _ => Err("Unknown target".into()),
     }

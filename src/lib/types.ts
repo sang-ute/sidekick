@@ -37,7 +37,7 @@ export interface SidekickNotification {
 export type ConnectorStatus = "connected" | "needs-auth" | "failed" | "pending";
 export interface Connector {
   name: string;
-  status: ConnectorStatus | string;
+  status: ConnectorStatus | (string & {}); // known values autocomplete; Claude Code may add others
   source?: "sidekick" | "claudeai" | "user";
 }
 

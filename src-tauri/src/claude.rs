@@ -34,7 +34,9 @@ pub enum ClaudeEvent {
 fn style(s: &str) -> &'static str {
     match s {
         "brief" => "Keep replies to one to three short lines unless the user asks for more.",
-        "detailed" => "Give complete answers: explain your reasoning and list steps when useful, still using simple formatting.",
+        "detailed" => {
+            "Give complete answers: explain your reasoning and list steps when useful, still using simple formatting."
+        }
         _ => "Be brief by default: a few short lines, with more detail only when it helps.",
     }
 }
@@ -52,7 +54,8 @@ pub fn system_prompt(cfg: &Config) -> String {
     if on.youtube {
         tools.push("- YouTube: youtube_latest, youtube_follow.".into());
     }
-    let google: Vec<&str> = [(on.gmail, "Gmail"), (on.calendar, "Google Calendar")].iter().filter(|x| x.0).map(|x| x.1).collect();
+    let google: Vec<&str> =
+        [(on.gmail, "Gmail"), (on.calendar, "Google Calendar")].iter().filter(|x| x.0).map(|x| x.1).collect();
     if !google.is_empty() {
         tools.push(format!("- {}: claude.ai connectors, when the user has connected them. If a connector's tools aren't available, say it needs connecting at claude.ai → Settings → Connectors (or in Sidekick settings → Connections).", google.join(" / ")));
     }
@@ -60,7 +63,10 @@ pub fn system_prompt(cfg: &Config) -> String {
         tools.push("- Web search and page reading for fresh information.".into());
     }
     if !cfg.mcp_servers.is_empty() {
-        tools.push(format!("- The user's own MCP servers: {}.", cfg.mcp_servers.keys().cloned().collect::<Vec<_>>().join(", ")));
+        tools.push(format!(
+            "- The user's own MCP servers: {}.",
+            cfg.mcp_servers.keys().cloned().collect::<Vec<_>>().join(", ")
+        ));
     }
     let mut sync = vec!["1. list_tasks first so you don't add duplicates.".to_string()];
     if on.github {
@@ -76,7 +82,11 @@ pub fn system_prompt(cfg: &Config) -> String {
         sync.push("- youtube_latest: add one task per new video worth watching (source youtube, with link).".into());
     }
     sync.push("- Finish with a 2-4 line summary: what's new and the most important thing to do first.".into());
-    let lang = if cfg.language.is_empty() { "Reply in the language the user writes in.".to_string() } else { format!("Always reply in {}.", cfg.language) };
+    let lang = if cfg.language.is_empty() {
+        "Reply in the language the user writes in.".to_string()
+    } else {
+        format!("Always reply in {}.", cfg.language)
+    };
     [
         vec![
             "You are Sidekick, a small personal assistant who lives on the user's Windows desktop as a little blue mascot, running on Claude Code.".to_string(),
@@ -114,23 +124,88 @@ struct Inner {
     busy: bool,
 }
 
+/// Arguments for a long-lived `claude -p` session with these settings.
+fn claude_args(cfg: &Config, mcp_file: &Path, session_id: Option<&str>) -> Vec<String> {
+    let on = &cfg.integrations;
+    // claude.ai connectors only work once connected on claude.ai. The system prompt
+    // forbids sending/deleting anything unless the user asks in the chat.
+    let connectors = [(on.gmail, "mcp__claude_ai_Gmail"), (on.calendar, "mcp__claude_ai_Google_Calendar")];
+    let mut allowed: Vec<String> = vec!["mcp__sidekick".into()];
+    if on.web {
+        allowed.extend(["WebSearch".into(), "WebFetch".into()]);
+    }
+    allowed.extend(connectors.iter().filter(|c| c.0).map(|c| c.1.to_string()));
+    allowed.extend(cfg.extra_allowed_tools.iter().cloned());
+    let blocked: Vec<&str> = connectors.iter().filter(|c| !c.0).map(|c| c.1).collect();
+    let mut args: Vec<String> = [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--append-system-prompt",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    args.push(system_prompt(cfg));
+    args.extend(["--mcp-config".into(), mcp_file.to_string_lossy().to_string()]);
+    // never shell or file editing from the mascot
+    args.extend(["--tools".into(), if on.web { "WebSearch,WebFetch".into() } else { String::new() }]);
+    args.extend(["--allowedTools".into(), allowed.join(",")]);
+    args.extend(["--effort".into(), cfg.effort.clone()]);
+    if !blocked.is_empty() {
+        args.extend(["--disallowedTools".into(), blocked.join(",")]);
+    }
+    if let Some(m) = &cfg.model {
+        args.extend(["--model".into(), m.clone()]);
+    }
+    if let Some(id) = session_id {
+        args.extend(["--resume".into(), id.to_string()]);
+    }
+    args
+}
+
 pub struct ClaudeSession {
     pub claude_path: Option<PathBuf>,
     pub work_dir: PathBuf,
     data_dir: PathBuf,
     mcp_file: PathBuf,
+    /// The executable that serves Sidekick's MCP tools (`--mcp`). None = this one.
+    mcp_exe: Option<PathBuf>,
     inner: Mutex<Inner>,
     events: mpsc::UnboundedSender<ClaudeEvent>,
 }
 
 impl ClaudeSession {
     pub fn new(data_dir: &Path, config: Config, events: mpsc::UnboundedSender<ClaudeEvent>) -> Arc<Self> {
+        Self::with_paths(data_dir, config, events, proc::find_claude(), None)
+    }
+
+    /// Like `new`, with an explicit `claude` executable and MCP server executable (tests).
+    pub fn with_paths(
+        data_dir: &Path,
+        config: Config,
+        events: mpsc::UnboundedSender<ClaudeEvent>,
+        claude_path: Option<PathBuf>,
+        mcp_exe: Option<PathBuf>,
+    ) -> Arc<Self> {
         Arc::new(ClaudeSession {
-            claude_path: proc::find_claude(),
+            claude_path,
             work_dir: data_dir.join("workspace"), // empty folder: no project files or CLAUDE.md
             data_dir: data_dir.to_path_buf(),
             mcp_file: data_dir.join("mcp.json"),
-            inner: Mutex::new(Inner { config, stdin_tx: None, kill_tx: None, generation: 0, session_id: None, busy: false }),
+            mcp_exe,
+            inner: Mutex::new(Inner {
+                config,
+                stdin_tx: None,
+                kill_tx: None,
+                generation: 0,
+                session_id: None,
+                busy: false,
+            }),
             events,
         })
     }
@@ -151,8 +226,12 @@ impl ClaudeSession {
 
     fn write_mcp_config(&self, cfg: &Config) -> std::io::Result<()> {
         let on = &cfg.integrations;
-        let disabled: Vec<&str> = [(on.github, "github"), (on.youtube, "youtube")].iter().filter(|x| !x.0).map(|x| x.1).collect();
-        let exe = std::env::current_exe()?;
+        let disabled: Vec<&str> =
+            [(on.github, "github"), (on.youtube, "youtube")].iter().filter(|x| !x.0).map(|x| x.1).collect();
+        let exe = match &self.mcp_exe {
+            Some(p) => p.clone(),
+            None => std::env::current_exe()?,
+        };
         let mut servers = serde_json::Map::new();
         // Sidekick's own tools: this same executable in MCP mode.
         servers.insert(
@@ -166,7 +245,9 @@ impl ClaudeSession {
         for (name, s) in &cfg.mcp_servers {
             let v = match s {
                 McpServer::Http { url, headers } => json!({ "type": "http", "url": url, "headers": headers }),
-                McpServer::Stdio { command, args, env } => json!({ "type": "stdio", "command": command, "args": args, "env": env }),
+                McpServer::Stdio { command, args, env } => {
+                    json!({ "type": "stdio", "command": command, "args": args, "env": env })
+                }
             };
             servers.insert(name.clone(), v);
         }
@@ -183,41 +264,7 @@ impl ClaudeSession {
         let path = self.claude_path.clone().ok_or("Claude Code isn't installed (couldn't find `claude`).")?;
         let cfg = inner.config.clone();
         self.write_mcp_config(&cfg).map_err(|e| format!("Couldn't write the MCP config: {e}"))?;
-        let on = &cfg.integrations;
-        // claude.ai connectors only work once connected on claude.ai. The system prompt
-        // forbids sending/deleting anything unless the user asks in the chat.
-        let connectors = [(on.gmail, "mcp__claude_ai_Gmail"), (on.calendar, "mcp__claude_ai_Google_Calendar")];
-        let mut allowed: Vec<String> = vec!["mcp__sidekick".into()];
-        if on.web {
-            allowed.extend(["WebSearch".into(), "WebFetch".into()]);
-        }
-        allowed.extend(connectors.iter().filter(|c| c.0).map(|c| c.1.to_string()));
-        allowed.extend(cfg.extra_allowed_tools.iter().cloned());
-        let blocked: Vec<&str> = connectors.iter().filter(|c| !c.0).map(|c| c.1).collect();
-        let prompt = system_prompt(&cfg);
-        let mcp = self.mcp_file.to_string_lossy().to_string();
-        let mut args: Vec<String> = [
-            "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-            "--include-partial-messages", "--append-system-prompt",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        args.push(prompt);
-        args.extend(["--mcp-config".into(), mcp]);
-        // never shell or file editing from the mascot
-        args.extend(["--tools".into(), if on.web { "WebSearch,WebFetch".into() } else { String::new() }]);
-        args.extend(["--allowedTools".into(), allowed.join(",")]);
-        args.extend(["--effort".into(), cfg.effort.clone()]);
-        if !blocked.is_empty() {
-            args.extend(["--disallowedTools".into(), blocked.join(",")]);
-        }
-        if let Some(m) = &cfg.model {
-            args.extend(["--model".into(), m.clone()]);
-        }
-        if let Some(id) = &inner.session_id {
-            args.extend(["--resume".into(), id.clone()]);
-        }
+        let args = claude_args(&cfg, &self.mcp_file, inner.session_id.as_deref());
 
         self.emit(ClaudeEvent::Status { state: "starting", model: None, connectors: None });
         let mut cmd = proc::command(&path);
@@ -321,7 +368,9 @@ impl ClaudeSession {
             let hint = if lost_session { " (old session couldn't be resumed, starting fresh)" } else { "" };
             let last = stderr.trim().lines().last().unwrap_or("");
             let code = code.map(|c| c.to_string()).unwrap_or_else(|| "?".into());
-            self.emit(ClaudeEvent::Error(format!("Claude Code stopped (exit {code}){hint}. {last}").trim().to_string()));
+            self.emit(ClaudeEvent::Error(
+                format!("Claude Code stopped (exit {code}){hint}. {last}").trim().to_string(),
+            ));
         }
     }
 
@@ -336,11 +385,19 @@ impl ClaudeSession {
                 .as_array()
                 .map(|a| {
                     a.iter()
-                        .map(|s| Connector { name: s["name"].as_str().unwrap_or("").into(), status: s["status"].as_str().unwrap_or("").into(), source: None })
+                        .map(|s| Connector {
+                            name: s["name"].as_str().unwrap_or("").into(),
+                            status: s["status"].as_str().unwrap_or("").into(),
+                            source: None,
+                        })
                         .collect()
                 })
                 .unwrap_or_default();
-            self.emit(ClaudeEvent::Status { state: "ready", model: m["model"].as_str().map(String::from), connectors: Some(connectors) });
+            self.emit(ClaudeEvent::Status {
+                state: "ready",
+                model: m["model"].as_str().map(String::from),
+                connectors: Some(connectors),
+            });
             return;
         }
         if ty == "stream_event" && m["parent_tool_use_id"].is_null() {
@@ -350,7 +407,9 @@ impl ClaudeSession {
                     self.emit(ClaudeEvent::Delta(t.to_string()));
                 }
             }
-            if e["type"] == "content_block_start" && e["content_block"]["type"].as_str().is_some_and(|t| t.ends_with("tool_use")) {
+            if e["type"] == "content_block_start"
+                && e["content_block"]["type"].as_str().is_some_and(|t| t.ends_with("tool_use"))
+            {
                 if let Some(n) = e["content_block"]["name"].as_str() {
                     self.emit(ClaudeEvent::Tool(n.to_string()));
                 }
@@ -371,7 +430,10 @@ impl ClaudeSession {
                 )));
             }
             if m["is_error"].as_bool().unwrap_or(false) {
-                let msg = m["result"].as_str().map(String::from).unwrap_or_else(|| format!("Claude Code error ({})", m["subtype"].as_str().unwrap_or("")));
+                let msg = m["result"]
+                    .as_str()
+                    .map(String::from)
+                    .unwrap_or_else(|| format!("Claude Code error ({})", m["subtype"].as_str().unwrap_or("")));
                 self.emit(ClaudeEvent::Error(msg));
             } else {
                 self.emit(ClaudeEvent::Done);
@@ -393,7 +455,8 @@ impl ClaudeSession {
         let Some(tx) = inner.stdin_tx.clone() else { return }; // failed to start; error already sent
         inner.busy = true;
         drop(inner);
-        let msg = json!({ "type": "user", "message": { "role": "user", "content": format!("{}\n{}", now_tag(), text) } });
+        let msg =
+            json!({ "type": "user", "message": { "role": "user", "content": format!("{}\n{}", now_tag(), text) } });
         let _ = tx.send(format!("{msg}\n"));
     }
 
@@ -423,10 +486,206 @@ impl ClaudeSession {
         };
         self.stop();
         if was_busy {
-            self.emit(ClaudeEvent::Error("Restarted Claude Code with your new settings. Please send that again.".into()));
+            self.emit(ClaudeEvent::Error(
+                "Restarted Claude Code with your new settings. Please send that again.".into(),
+            ));
         }
         if self.ready() {
             let _ = self.start();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Integrations;
+
+    const MCP_EXE: &str = r"C:\Sidekick\sidekick.exe";
+
+    fn session(dir: &Path, cfg: Config) -> (Arc<ClaudeSession>, mpsc::UnboundedReceiver<ClaudeEvent>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (ClaudeSession::with_paths(dir, cfg, tx, None, Some(PathBuf::from(MCP_EXE))), rx)
+    }
+    fn drain(rx: &mut mpsc::UnboundedReceiver<ClaudeEvent>) -> Vec<ClaudeEvent> {
+        std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    }
+    fn value_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).map(String::as_str)
+    }
+
+    #[test]
+    fn prompt_lists_only_what_is_switched_on() {
+        let mut cfg = Config::default();
+        let p = system_prompt(&cfg);
+        for want in
+            ["create_reminder", "add_task", "github_inbox", "youtube_latest", "Gmail / Google Calendar", "Web search"]
+        {
+            assert!(p.contains(want), "default prompt should mention {want}");
+        }
+        assert!(p.contains("Reply in the language the user writes in."));
+        assert!(p.contains("Never send, delete, archive or modify emails"));
+
+        cfg.integrations = Integrations { github: false, youtube: false, gmail: false, calendar: true, web: false };
+        cfg.language = "Vietnamese".into();
+        cfg.response_style = "brief".into();
+        cfg.mcp_servers
+            .insert("fs".into(), McpServer::Stdio { command: "npx".into(), args: vec![], env: Default::default() });
+        let p = system_prompt(&cfg);
+        for gone in ["github_inbox", "youtube_latest", "Web search", "Gmail"] {
+            assert!(!p.contains(gone), "{gone} is switched off");
+        }
+        assert!(p.contains("- Google Calendar: claude.ai connectors"));
+        assert!(p.contains("Always reply in Vietnamese."));
+        assert!(p.contains("one to three short lines"));
+        assert!(p.contains("The user's own MCP servers: fs."));
+        assert!(p.contains("create_reminder") && p.contains("add_task"), "reminders and tasks are always available");
+    }
+
+    #[test]
+    fn now_tag_has_date_time_and_utc_offset() {
+        let re = regex::Regex::new(
+            r"^\[now: [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+ \d{4} at \d{2}:\d{2}, UTC[+-]\d{2}:\d{2}\]$",
+        )
+        .unwrap();
+        let tag = now_tag();
+        assert!(re.is_match(&tag), "{tag}");
+    }
+
+    #[test]
+    fn args_follow_the_settings() {
+        let mcp = Path::new(r"C:\data\mcp.json");
+        let a = claude_args(&Config::default(), mcp, None);
+        assert_eq!(&a[..2], ["-p", "--input-format"]);
+        assert_eq!(value_of(&a, "--output-format"), Some("stream-json"));
+        assert_eq!(value_of(&a, "--mcp-config"), Some(r"C:\data\mcp.json"));
+        assert_eq!(value_of(&a, "--tools"), Some("WebSearch,WebFetch"), "only web tools: no shell, no file edits");
+        assert_eq!(
+            value_of(&a, "--allowedTools"),
+            Some("mcp__sidekick,WebSearch,WebFetch,mcp__claude_ai_Gmail,mcp__claude_ai_Google_Calendar")
+        );
+        assert_eq!(value_of(&a, "--effort"), Some("low"));
+        assert!(value_of(&a, "--append-system-prompt").unwrap().starts_with("You are Sidekick"));
+        for absent in ["--disallowedTools", "--model", "--resume"] {
+            assert!(!a.iter().any(|x| x == absent), "{absent} should not be passed");
+        }
+
+        let mut cfg = Config::default();
+        cfg.integrations.web = false;
+        cfg.integrations.gmail = false;
+        cfg.model = Some("claude-haiku-5-5".into());
+        cfg.effort = "high".into();
+        cfg.extra_allowed_tools = vec!["mcp__fs__read".into()];
+        let a = claude_args(&cfg, mcp, Some("abc-123"));
+        assert_eq!(value_of(&a, "--tools"), Some(""), "no built-in tools at all with web off");
+        assert_eq!(value_of(&a, "--allowedTools"), Some("mcp__sidekick,mcp__claude_ai_Google_Calendar,mcp__fs__read"));
+        assert_eq!(value_of(&a, "--disallowedTools"), Some("mcp__claude_ai_Gmail"));
+        assert_eq!(value_of(&a, "--model"), Some("claude-haiku-5-5"));
+        assert_eq!(value_of(&a, "--effort"), Some("high"));
+        assert_eq!(value_of(&a, "--resume"), Some("abc-123"));
+    }
+
+    #[test]
+    fn mcp_config_points_at_sidekick_and_the_users_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Config::default();
+        cfg.integrations.github = false;
+        cfg.mcp_servers.insert(
+            "notes".into(),
+            McpServer::Http { url: "https://example.com/mcp".into(), headers: [("X-Key".into(), "1".into())].into() },
+        );
+        cfg.mcp_servers.insert(
+            "fs".into(),
+            McpServer::Stdio { command: "npx".into(), args: vec!["-y".into(), "fs".into()], env: Default::default() },
+        );
+        let (s, _rx) = session(dir.path(), cfg.clone());
+        s.write_mcp_config(&cfg).unwrap();
+        let v: Value = serde_json::from_slice(&std::fs::read(dir.path().join("mcp.json")).unwrap()).unwrap();
+        let sk = &v["mcpServers"]["sidekick"];
+        assert_eq!(sk["command"], MCP_EXE);
+        assert_eq!(sk["args"], json!(["--mcp"]));
+        assert_eq!(sk["env"]["SIDEKICK_DATA"], dir.path().to_string_lossy().as_ref());
+        assert_eq!(sk["env"]["SIDEKICK_DISABLED"], "github");
+        assert_eq!(
+            v["mcpServers"]["notes"],
+            json!({ "type": "http", "url": "https://example.com/mcp", "headers": { "X-Key": "1" } })
+        );
+        assert_eq!(v["mcpServers"]["fs"]["type"], "stdio");
+        assert_eq!(v["mcpServers"]["fs"]["args"], json!(["-y", "fs"]));
+        assert!(dir.path().join("workspace").is_dir(), "Claude Code runs in an empty workspace folder");
+    }
+
+    #[test]
+    fn stream_messages_become_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let (s, mut rx) = session(dir.path(), Config::default());
+        s.handle(
+            0,
+            &json!({ "type": "system", "subtype": "init", "session_id": "s-1", "model": "claude-opus-5-5",
+                "mcp_servers": [{ "name": "sidekick", "status": "connected" }, { "name": "claude.ai Gmail", "status": "needs-auth" }] }),
+        );
+        s.handle(
+            0,
+            &json!({ "type": "stream_event", "parent_tool_use_id": null,
+                "event": { "type": "content_block_delta", "delta": { "type": "text_delta", "text": "Hel" } } }),
+        );
+        s.handle(
+            0,
+            &json!({ "type": "stream_event", "parent_tool_use_id": null,
+                "event": { "type": "content_block_start", "content_block": { "type": "tool_use", "name": "mcp__sidekick__add_task" } } }),
+        );
+        // A subagent's stream (parent_tool_use_id set) is not shown in the chat.
+        s.handle(
+            0,
+            &json!({ "type": "stream_event", "parent_tool_use_id": "toolu_1",
+                "event": { "type": "content_block_delta", "delta": { "type": "text_delta", "text": "hidden" } } }),
+        );
+        // The full assistant message repeats the streamed text; it isn't shown twice.
+        s.handle(0, &json!({ "type": "assistant", "message": { "content": [{ "type": "text", "text": "Hello" }] } }));
+        s.inner.lock().unwrap().busy = true;
+        s.handle(
+            0,
+            &json!({ "type": "result", "subtype": "success", "is_error": false,
+                "permission_denials": [{ "tool_name": "WebFetch" }, { "tool_name": "WebFetch" }] }),
+        );
+
+        let ev = drain(&mut rx);
+        assert!(matches!(&ev[0], ClaudeEvent::Status { state: "ready", model: Some(m), connectors: Some(c) }
+            if m == "claude-opus-5-5" && c.len() == 2 && c[1].status == "needs-auth"));
+        assert!(matches!(&ev[1], ClaudeEvent::Delta(t) if t == "Hel"));
+        assert!(matches!(&ev[2], ClaudeEvent::Tool(n) if n == "mcp__sidekick__add_task"));
+        assert!(matches!(&ev[3], ClaudeEvent::Note(n) if n.contains("Not allowed to use: WebFetch.")));
+        assert!(matches!(&ev[4], ClaudeEvent::Done));
+        assert_eq!(ev.len(), 5);
+        assert_eq!(s.inner.lock().unwrap().session_id.as_deref(), Some("s-1"), "kept for --resume");
+        assert!(!s.busy(), "a result ends the turn");
+    }
+
+    #[test]
+    fn error_results_and_stale_processes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (s, mut rx) = session(dir.path(), Config::default());
+        s.handle(
+            0,
+            &json!({ "type": "result", "subtype": "error_max_turns", "is_error": true, "result": "Too many steps" }),
+        );
+        s.handle(0, &json!({ "type": "result", "subtype": "error_during_execution", "is_error": true }));
+        // Output from a process that was already replaced (older generation) is ignored.
+        s.handle(7, &json!({ "type": "result", "subtype": "success", "is_error": false }));
+        let ev = drain(&mut rx);
+        assert!(matches!(&ev[0], ClaudeEvent::Error(m) if m == "Too many steps"));
+        assert!(matches!(&ev[1], ClaudeEvent::Error(m) if m == "Claude Code error (error_during_execution)"));
+        assert_eq!(ev.len(), 2);
+    }
+
+    #[test]
+    fn sending_without_claude_code_explains_why() {
+        let dir = tempfile::tempdir().unwrap();
+        let (s, mut rx) = session(dir.path(), Config::default());
+        assert!(!s.ready());
+        s.send("hello");
+        let ev = drain(&mut rx);
+        assert!(matches!(&ev[..], [ClaudeEvent::Error(m)] if m.contains("isn't installed")), "{ev:?}");
+        assert!(!s.busy());
     }
 }

@@ -7,7 +7,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   try {
     return await invoke<T>(cmd, args);
   } catch (e) {
-    throw new Error(typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
+    throw new Error(typeof e === "string" ? e : e instanceof Error ? e.message : String(e), { cause: e });
   }
 }
 

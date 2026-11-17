@@ -1,0 +1,3 @@
+# House style: one idea per line, up to 120 columns. `cargo fmt` applies it; CI checks it.
+max_width = 120
+use_small_heuristics = "Max"

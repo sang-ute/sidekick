@@ -33,6 +33,8 @@ function Seg<T extends string>({ items, current, onPick, label }: { items: { id:
   };
   const known = items.some((it) => it.id === current);
   return (
+    // Roving focus: the checked radio is focusable and the arrow keys move between them (ARIA radio group).
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus
     <div className="seg" role="radiogroup" aria-labelledby={label} onKeyDown={onKey}>
       {items.map((it, i) => {
         const on = it.id === current;
@@ -67,7 +69,8 @@ function StatusPill({ status }: { status: string }) {
     default: return <Pill>{status || "Unknown"}</Pill>;
   }
 }
-function Skeleton({ widths = ["w60", "w80", "w40"] }: { widths?: string[] }) {
+const SKELETON_WIDTHS = ["w60", "w80", "w40"];
+function Skeleton({ widths = SKELETON_WIDTHS }: { widths?: string[] }) {
   return <>{widths.map((w, i) => <span key={i} className={`skel ${w}`} />)}</>;
 }
 
@@ -85,7 +88,7 @@ const SIZE_LABEL: Record<string, string> = { small: "Small", medium: "Medium", l
 const MOD_KEYS = new Set(["command", "cmd", "control", "ctrl", "commandorcontrol", "cmdorctrl", "alt", "option", "altgr", "shift", "super", "meta"]);
 const KEY_RE = /^([a-z0-9]|f([1-9]|1[0-9]|2[0-4])|space|tab|capslock|numlock|scrolllock|backspace|delete|insert|return|enter|up|down|left|right|home|end|pageup|pagedown|escape|esc|plus|printscreen|num[0-9]|[)!@#$%^&*(:;<_>?~{|}"',./`[\]\\=-])$/i;
 function validShortcut(s: string) {
-  const parts = String(s).split("+").map((p) => p.trim());
+  const parts = s.split("+").map((p) => p.trim());
   if (parts.length < 2 || parts.some((p) => !p)) return false;
   const key = parts.pop()!;
   return parts.every((p) => MOD_KEYS.has(p.toLowerCase())) && KEY_RE.test(key);
@@ -101,7 +104,7 @@ function methodLabel(auth: Auth) {
   if (m.includes("console") || m.includes("api")) return "Anthropic Console (API billing)";
   return auth.authMethod || "Unknown";
 }
-const titleCase = (s: string) => String(s || "").replace(/(^|[\s_-])(\w)/g, (_, a: string, b: string) => a + b.toUpperCase());
+const titleCase = (s: string) => (s || "").replace(/(^|[\s_-])(\w)/g, (_, a: string, b: string) => a + b.toUpperCase());
 const ghText = (gh: Info["github"] | undefined) => (!gh ? "Checking…" : !gh.installed ? "Not installed" : gh.loggedIn ? `Signed in${gh.user ? ` as @${gh.user}` : ""}` : "Signed out");
 
 /** "a b 'c d'" → ["a", "b", "c d"]; backslashes are kept as-is (Windows paths). */
@@ -197,7 +200,7 @@ export function Settings() {
   const saveLater = useCallback((key: string, makePartial: () => Partial<Config> | null, ms = 500) => {
     const old = pending.current.get(key);
     if (old) clearTimeout(old.timer);
-    const entry = { timer: 0, fn: () => { pending.current.delete(key); const p = makePartial(); if (p) save(p); } };
+    const entry = { timer: 0, fn: () => { pending.current.delete(key); const p = makePartial(); if (p) void save(p); } };
     entry.timer = window.setTimeout(entry.fn, ms);
     pending.current.set(key, entry);
   }, [save]);
@@ -206,7 +209,7 @@ export function Settings() {
     if (e) { clearTimeout(e.timer); pending.current.delete(key); }
   };
   const flushPending = useCallback(() => {
-    for (const e of [...pending.current.values()]) { clearTimeout(e.timer); e.fn(); }
+    for (const e of Array.from(pending.current.values())) { clearTimeout(e.timer); e.fn(); }
   }, []);
 
   const post = useCallback(async <T,>(fn: () => Promise<T>, okMsg?: string): Promise<T | null> => {
@@ -241,7 +244,7 @@ export function Settings() {
   }, [showToast]);
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         const s = await api.settings();
         setConfig(s.config);
@@ -252,7 +255,7 @@ export function Settings() {
         setLoadError(`Couldn't load settings: ${(e as Error).message}`);
       }
     })();
-    loadInfo();
+    void loadInfo();
     return subscribe({
       hello: (h) => { setConfig(h.config); if (h.status?.connectors) setLiveConnectors(h.status.connectors); },
       config: (c) => setConfig(c),
@@ -268,7 +271,7 @@ export function Settings() {
   // ---------- window ----------
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented) { flushPending(); shell.closeSettings(); }
+      if (e.key === "Escape" && !e.defaultPrevented) { flushPending(); void shell.closeSettings(); }
     };
     const onVis = () => { if (document.hidden) flushPending(); };
     document.addEventListener("keydown", onKey);
@@ -304,7 +307,7 @@ export function Settings() {
   const connectors = (): Connector[] => {
     const byName = new Map<string, Connector>();
     for (const c of info?.connectors || []) byName.set(c.name, { ...c });
-    for (const c of liveConnectors || []) byName.set(c.name, { ...(byName.get(c.name) || {}), ...c });
+    for (const c of liveConnectors || []) byName.set(c.name, { ...byName.get(c.name), ...c });
     return [...byName.values()].filter((c) => c.name !== "sidekick");
   };
   const findConnector = (re: RegExp) => connectors().find((c) => re.test(c.name));
@@ -335,7 +338,7 @@ export function Settings() {
     const res = await post(() => api.claudeLogout());
     if (!res) return;
     showToast("Signed out", "info");
-    loadInfo();
+    void loadInfo();
   };
 
   // ---------- drafts for text fields ----------
@@ -407,7 +410,7 @@ export function Settings() {
     const list = config.youtubeChannels || [];
     if (list.some((c) => c.toLowerCase() === v.toLowerCase())) return showToast("Already following that channel.", "err");
     setYtInput("");
-    save({ youtubeChannels: [...list, v] });
+    void save({ youtubeChannels: [...list, v] });
   };
   const addTool = (e: FormEvent) => {
     e.preventDefault();
@@ -417,7 +420,7 @@ export function Settings() {
     const list = config.extraAllowedTools || [];
     if (list.includes(v)) return showToast("Already on the list.", "err");
     setToolInput("");
-    save({ extraAllowedTools: [...list, v] });
+    void save({ extraAllowedTools: [...list, v] });
   };
   const Chips = ({ items, onRemove, empty, label }: { items: string[]; onRemove: (s: string) => void; empty: string; label: string }) => (
     <div className="chips" aria-label={label} data-empty={empty}>
@@ -478,11 +481,11 @@ export function Settings() {
           <span>Sidekick settings</span>
         </div>
         <span className="conn" role="status" aria-live="polite" />
-        <button className="win-close" type="button" aria-label="Close settings" title="Close (Esc)" onClick={() => { flushPending(); shell.closeSettings(); }}>✕</button>
+        <button className="win-close" type="button" aria-label="Close settings" title="Close (Esc)" onClick={() => { flushPending(); void shell.closeSettings(); }}>✕</button>
       </header>
 
       <div className="layout">
-        <nav className="sidebar" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+        <div className="sidebar" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -499,7 +502,7 @@ export function Settings() {
               <span aria-hidden="true">{t.icon}</span> {t.label}
             </button>
           ))}
-        </nav>
+        </div>
 
         <main className="content" ref={contentRef}>
           <div className="banner err" role="alert" hidden={!loadError}>{loadError}</div>
@@ -562,7 +565,7 @@ export function Settings() {
                       {...syncTimeFocus}
                       onChange={(e) => {
                         setSyncTime(e.target.value);
-                        if (c!.dailySyncTime && /^\d{2}:\d{2}$/.test(e.target.value)) save({ dailySyncTime: e.target.value });
+                        if (c!.dailySyncTime && /^\d{2}:\d{2}$/.test(e.target.value)) void save({ dailySyncTime: e.target.value });
                       }}
                     />
                   </div>
@@ -596,7 +599,7 @@ export function Settings() {
                     {auth!.subscriptionType && <><dt>Plan</dt><dd>{titleCase(auth!.subscriptionType)}</dd></>}
                     {auth!.email && <><dt>Email</dt><dd>{auth!.email}</dd></>}
                     {auth!.orgName && <><dt>Organization</dt><dd>{auth!.orgName}</dd></>}
-                    {claude?.version && <><dt>Claude Code</dt><dd>{`v${String(claude.version).replace(/^v/, "")}`}</dd></>}
+                    {claude?.version && <><dt>Claude Code</dt><dd>{`v${claude.version.replace(/^v/, "")}`}</dd></>}
                   </>
                 )}
               </dl>
@@ -667,7 +670,7 @@ export function Settings() {
                 <h2>Built-in tools</h2>
                 <div className="card list">
                   {BUILTINS.map((b) => {
-                    const enabled = integ[b.key] !== false;
+                    const enabled = integ[b.key];
                     let side: ReactNode = null;
                     if (b.key === "github") {
                       const gh = info?.github;
@@ -683,7 +686,7 @@ export function Settings() {
                         : !conn ? <><Pill>Not connected</Pill><button type="button" className="btn small" onClick={() => openTarget("connectors")}>Connect on claude.ai</button></>
                         : <><StatusPill status={conn.status} />{conn.status === "needs-auth" && <button type="button" className="btn small" onClick={() => mcpLogin(conn.name)}>Authorize</button>}</>;
                     } else if (b.key === "youtube") {
-                      const n = (c!.youtubeChannels || []).length;
+                      const n = (c.youtubeChannels || []).length;
                       side = <Pill kind={n ? "info" : ""}>{n ? `${n} channel${n === 1 ? "" : "s"}` : "No channels yet"}</Pill>;
                     } else {
                       side = <Pill kind="info">Built in</Pill>;
@@ -695,7 +698,7 @@ export function Settings() {
                         <div className="side">
                           {side}
                           <Switch label={`Use ${b.name}`} title={enabled ? `Turn off ${b.name}` : `Turn on ${b.name}`} checked={enabled}
-                            onChange={(v) => save({ integrations: { ...c!.integrations, [b.key]: v } })} />
+                            onChange={(v) => save({ integrations: { ...c.integrations, [b.key]: v } })} />
                         </div>
                       </div>
                     );
@@ -714,13 +717,13 @@ export function Settings() {
                     </div>
                   ) : (
                     connectors().map((cn) => {
-                      const isClaudeAi = cn.source === "claudeai" || /^claude\.ai /.test(cn.name);
+                      const isClaudeAi = cn.source === "claudeai" || cn.name.startsWith("claude.ai ");
                       return (
                         <div key={cn.name} className="item">
                           <div className="ic" aria-hidden="true">{isClaudeAi ? "☁️" : "🧩"}</div>
                           <div className="main">
                             <div className="name">{cn.name.replace(/^claude\.ai /, "")}</div>
-                            <div className="desc">{isClaudeAi ? "claude.ai connector" : (c!.mcpServers || {})[cn.name] ? "Sidekick custom server" : "Claude Code MCP server"}</div>
+                            <div className="desc">{isClaudeAi ? "claude.ai connector" : (c.mcpServers || {})[cn.name] ? "Sidekick custom server" : "Claude Code MCP server"}</div>
                           </div>
                           <div className="side">
                             <StatusPill status={cn.status} />
@@ -735,11 +738,11 @@ export function Settings() {
                 <h2>Custom MCP servers</h2>
                 <p className="sub">Extra servers that only Sidekick's Claude Code uses.</p>
                 <div className="card list">
-                  {Object.keys(c!.mcpServers || {}).length === 0 ? (
+                  {Object.keys(c.mcpServers || {}).length === 0 ? (
                     <div className="empty-line">No custom servers yet.</div>
                   ) : (
-                    Object.entries(c!.mcpServers).map(([name, s]) => {
-                      const tools = c!.extraAllowedTools || [];
+                    Object.entries(c.mcpServers).map(([name, s]) => {
+                      const tools = c.extraAllowedTools || [];
                       const live = connectors().find((x) => x.name === name);
                       return (
                         <div key={name} className="item">
@@ -756,9 +759,9 @@ export function Settings() {
                             {live && <StatusPill status={live.status} />}
                             <button type="button" className="btn small danger" onClick={() => {
                               if (!confirm(`Remove the MCP server "${name}"?`)) return;
-                              const next = { ...c!.mcpServers };
+                              const next = { ...c.mcpServers };
                               delete next[name];
-                              save({ mcpServers: next, extraAllowedTools: tools.filter((t) => t !== `mcp__${name}` && !t.startsWith(`mcp__${name}__`)) });
+                              void save({ mcpServers: next, extraAllowedTools: tools.filter((t) => t !== `mcp__${name}` && !t.startsWith(`mcp__${name}__`)) });
                             }}>Remove</button>
                           </div>
                         </div>
@@ -806,8 +809,8 @@ export function Settings() {
                 <h2>YouTube channels</h2>
                 <div className="card pad">
                   <p className="sub tight">Sidekick checks these for new videos when it syncs.</p>
-                  <Chips label="Followed channels" empty="No channels yet." items={c!.youtubeChannels || []}
-                    onRemove={(item) => save({ youtubeChannels: (c!.youtubeChannels || []).filter((x) => x !== item) })} />
+                  <Chips label="Followed channels" empty="No channels yet." items={c.youtubeChannels || []}
+                    onRemove={(item) => save({ youtubeChannels: (c.youtubeChannels || []).filter((x) => x !== item) })} />
                   <form className="chip-add" onSubmit={addChannel}>
                     <input className="input" autoComplete="off" spellCheck={false} placeholder="@channel or channel URL" aria-label="Add a YouTube channel" value={ytInput} onChange={(e) => setYtInput(e.target.value)} />
                     <button type="submit" className="btn">Add</button>
@@ -817,8 +820,8 @@ export function Settings() {
                 <h2>Advanced</h2>
                 <div className="card pad">
                   <div className="label">Auto-approved tools<small>Tools Claude may use without asking, e.g. <code>mcp__notion</code>. Built-in Sidekick tools, web search and your Gmail/Calendar connectors are already allowed.</small></div>
-                  <Chips label="Auto-approved tools" empty="None." items={c!.extraAllowedTools || []}
-                    onRemove={(item) => save({ extraAllowedTools: (c!.extraAllowedTools || []).filter((t) => t !== item) })} />
+                  <Chips label="Auto-approved tools" empty="None." items={c.extraAllowedTools || []}
+                    onRemove={(item) => save({ extraAllowedTools: (c.extraAllowedTools || []).filter((t) => t !== item) })} />
                   <form className="chip-add" onSubmit={addTool}>
                     <input className="input mono" autoComplete="off" spellCheck={false} placeholder="mcp__server or mcp__server__tool" aria-label="Add an auto-approved tool" value={toolInput} onChange={(e) => setToolInput(e.target.value)} />
                     <button type="submit" className="btn">Add</button>
@@ -837,7 +840,7 @@ export function Settings() {
                 <div className="card">
                   <div className="row">
                     <label className="label" htmlFor="mascotVisible">Show mascot<small>Hide it to keep only the tray icon.</small></label>
-                    <Switch id="mascotVisible" checked={c!.mascotVisible !== false} onChange={(v) => save({ mascotVisible: v })} />
+                    <Switch id="mascotVisible" checked={c!.mascotVisible} onChange={(v) => save({ mascotVisible: v })} />
                   </div>
                   <div className="row">
                     <div className="label"><span id="lbl-size">Size</span></div>
@@ -858,7 +861,7 @@ export function Settings() {
                 <div className="card">
                   <div className="row">
                     <label className="label" htmlFor="notifierAuto">Pop up on new alerts<small>Reminders, sync results and new tasks show in a bubble next to the mascot.</small></label>
-                    <Switch id="notifierAuto" checked={c!.notifier?.autoShow !== false} onChange={(v) => save({ notifier: { ...c!.notifier, autoShow: v } })} />
+                    <Switch id="notifierAuto" checked={c!.notifier.autoShow} onChange={(v) => save({ notifier: { ...c!.notifier, autoShow: v } })} />
                   </div>
                   <div className="row">
                     <label className="label" htmlFor="notifierHide">Hide the bubble after<small>It stays open while your mouse is over it.</small></label>
@@ -908,7 +911,7 @@ export function Settings() {
                   ["Tauri", info.app?.tauri],
                   ["WebView2", info.app?.webview || "—"],
                   ["Platform", [info.app?.platform, info.app?.arch].filter(Boolean).join(" ")],
-                  ["Claude Code", info.claude?.found ? (info.claude.version ? `v${String(info.claude.version).replace(/^v/, "")}` : "found") : "Not found"],
+                  ["Claude Code", info.claude?.found ? (info.claude.version ? `v${info.claude.version.replace(/^v/, "")}` : "found") : "Not found"],
                   ["Claude Code path", info.claude?.path, true],
                   ["GitHub CLI", ghText(info.github)],
                   ["Data folder", info.dataDir, true],

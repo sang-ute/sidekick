@@ -38,8 +38,8 @@ struct State {
     status: Status,
     history: Vec<Value>, // replay buffer so a newly opened window sees the current chat
     notifications: Vec<Notification>,
-    reply: String,           // text of the answer being streamed
-    syncing: Option<usize>,  // new tasks seen during the running sync
+    reply: String,          // text of the answer being streamed
+    syncing: Option<usize>, // new tasks seen during the running sync
     known_task_ids: HashSet<String>,
     mcp_cache: Option<(Instant, Vec<Connector>)>,
 }
@@ -62,7 +62,11 @@ impl Core {
         config::save(&dir, &config); // writes defaults so they're visible in the file
         let (tx, rx) = mpsc::unbounded_channel();
         let claude = ClaudeSession::new(&dir, config.clone(), tx);
-        let status = Status { state: if claude.ready() { "idle".into() } else { "missing".into() }, model: None, connectors: vec![] };
+        let status = Status {
+            state: if claude.ready() { "idle".into() } else { "missing".into() },
+            model: None,
+            connectors: vec![],
+        };
         store::prune_tasks(&dir);
         let known_task_ids = store::load_tasks(&dir).into_iter().map(|t| t.id).collect();
         let notifications = read_json(&dir.join("notifications.json")).unwrap_or_default();
@@ -70,7 +74,16 @@ impl Core {
             dir,
             app,
             claude,
-            state: Mutex::new(State { config, status, history: vec![], notifications, reply: String::new(), syncing: None, known_task_ids, mcp_cache: None }),
+            state: Mutex::new(State {
+                config,
+                status,
+                history: vec![],
+                notifications,
+                reply: String::new(),
+                syncing: None,
+                known_task_ids,
+                mcp_cache: None,
+            }),
         });
         core.spawn_claude_listener(rx);
         core.spawn_scheduler();
@@ -370,7 +383,10 @@ impl Core {
         if title.is_empty() {
             return Err("empty task".into());
         }
-        let (task, duplicate) = store::add_task(&self.dir, NewTask { title: title.into(), source: Some("me".into()), ..Default::default() });
+        let (task, duplicate) = store::add_task(
+            &self.dir,
+            NewTask { title: title.into(), source: Some("me".into()), ..Default::default() },
+        );
         self.push_tasks();
         Ok(json!({ "task": task, "duplicate": duplicate }))
     }
@@ -429,27 +445,7 @@ impl Core {
         }
         let Some(cp) = self.claude.claude_path.clone() else { return vec![] };
         let r = proc::run(&cp, &["mcp", "list"], 45, Some(&self.claude.work_dir)).await;
-        let line_re = regex::Regex::new(r"^(.+?): (\S.*) - (.+)$").unwrap();
-        let list: Vec<Connector> = r
-            .stdout
-            .lines()
-            .filter_map(|line| {
-                let m = line_re.captures(line.trim_end())?;
-                let s = m[3].to_lowercase();
-                let status = if s.contains("connected") && !s.contains("fail") && !s.contains("not") {
-                    "connected"
-                } else if s.contains("auth") {
-                    "needs-auth"
-                } else if s.contains("pending") {
-                    "pending"
-                } else {
-                    "failed"
-                };
-                let name = m[1].trim().to_string();
-                let source = if name.starts_with("claude.ai ") { "claudeai" } else { "user" };
-                Some(Connector { name, status: status.into(), source: Some(source.into()) })
-            })
-            .collect();
+        let list = parse_mcp_list(&r.stdout);
         self.state.lock().unwrap().mcp_cache = Some((Instant::now(), list.clone()));
         list
     }
@@ -489,7 +485,11 @@ impl Core {
                 "sidekick".to_string()
             } else {
                 by_name.iter().find(|x| x.name == c.name).and_then(|x| x.source.clone()).unwrap_or_else(|| {
-                    if c.name.starts_with("claude.ai ") { "claudeai".into() } else { "user".into() }
+                    if c.name.starts_with("claude.ai ") {
+                        "claudeai".into()
+                    } else {
+                        "user".into()
+                    }
                 })
             };
             by_name.retain(|x| x.name != c.name);
@@ -601,7 +601,14 @@ fn os_version() -> String {
     extern "system" {
         fn RtlGetVersion(info: *mut OsVersionInfoW) -> i32;
     }
-    let mut v = OsVersionInfoW { size: std::mem::size_of::<OsVersionInfoW>() as u32, major: 0, minor: 0, build: 0, platform: 0, service_pack: [0; 128] };
+    let mut v = OsVersionInfoW {
+        size: std::mem::size_of::<OsVersionInfoW>() as u32,
+        major: 0,
+        minor: 0,
+        build: 0,
+        platform: 0,
+        service_pack: [0; 128],
+    };
     // SAFETY: `v` is a correctly sized OSVERSIONINFOW with `size` set, as RtlGetVersion requires.
     if unsafe { RtlGetVersion(&mut v) } == 0 {
         format!("{}.{}.{}", v.major, v.minor, v.build)
@@ -612,4 +619,66 @@ fn os_version() -> String {
 #[cfg(not(windows))]
 fn os_version() -> String {
     String::new()
+}
+
+/// Connectors from `claude mcp list` output, e.g. "claude.ai Gmail: https://… - ✓ Connected".
+fn parse_mcp_list(stdout: &str) -> Vec<Connector> {
+    static LINE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"^(.+?): (\S.*) - (.+)$").unwrap());
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let m = LINE.captures(line.trim_end())?;
+            let s = m[3].to_lowercase();
+            let status = if s.contains("connected") && !s.contains("fail") && !s.contains("not") {
+                "connected"
+            } else if s.contains("auth") {
+                "needs-auth"
+            } else if s.contains("pending") {
+                "pending"
+            } else {
+                "failed"
+            };
+            let name = m[1].trim().to_string();
+            let source = if name.starts_with("claude.ai ") { "claudeai" } else { "user" };
+            Some(Connector { name, status: status.into(), source: Some(source.into()) })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mcp_list_output_becomes_connectors() {
+        let out = "Checking MCP server health…\n\n\
+            claude.ai Gmail: https://gmail.mcp.claude.com/mcp - ✓ Connected\n\
+            claude.ai Google Calendar: https://calendarmcp.googleapis.com/mcp/v1 - ! Needs authentication\n\
+            notes: npx -y notes-mcp - ✗ Failed to connect\n\
+            slow: https://slow.example.com/mcp - … Pending\n\
+            weird: cmd - ✓ Connected (not responding)\n";
+        let list = parse_mcp_list(out);
+        let got: Vec<(&str, &str, &str)> =
+            list.iter().map(|c| (c.name.as_str(), c.status.as_str(), c.source.as_deref().unwrap_or(""))).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("claude.ai Gmail", "connected", "claudeai"),
+                ("claude.ai Google Calendar", "needs-auth", "claudeai"),
+                ("notes", "failed", "user"),
+                ("slow", "pending", "user"),
+                ("weird", "failed", "user"),
+            ]
+        );
+        assert!(parse_mcp_list("No MCP servers configured.").is_empty());
+    }
+
+    #[test]
+    fn windows_version_is_read_without_a_console() {
+        if cfg!(windows) {
+            let v = os_version();
+            assert!(regex::Regex::new(r"^\d+\.\d+\.\d+$").unwrap().is_match(&v), "{v}");
+        }
+    }
 }
