@@ -147,9 +147,17 @@ The fake Claude Code (`src-tauri/src/fake_claude.rs`) speaks Claude Code's strea
 
 All on GitHub Actions' free tier. Sidekick is a desktop app, so there's no server or cloud infrastructure to provision (and no Terraform).
 
-- **CI** (`.github/workflows/ci.yml`), on pull requests and pushes to `master`:
-  - a Linux job: type check, UI lint and tests, Rust formatting, workflow lint (actionlint), and security audits of the npm packages and Rust crates the app ships;
-  - a Windows job: clippy, Rust unit and integration tests, then the end-to-end suite against the built app. Its `e2e-artifacts` are uploaded with every run.
+- **CI** (`.github/workflows/ci.yml`), on pull requests and pushes to `master`. Five jobs start at once, so a run takes about as long as the slowest one:
+
+  | Job | Runner | What it runs |
+  |---|---|---|
+  | `lint` | Linux | Type check, oxlint, rustfmt, actionlint, and security audits of the npm packages and Rust crates the app ships |
+  | `ui-tests` | Linux | Vitest |
+  | `clippy` | Windows | Rust lint |
+  | `rust-tests` | Windows | Rust unit and integration tests |
+  | `e2e` | Windows | Builds the app and runs the end-to-end suite; `e2e-artifacts` are uploaded with every run |
+
+  `rust-tests` and `e2e` build with the same features and share one build cache.
 - **Release** (`.github/workflows/release.yml`): bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, then push a matching tag (`git tag v1.2.3 && git push origin v1.2.3`). It tests, builds the installer and creates a **draft** GitHub release with the installer and its SHA-256. You review and publish it.
 - **Dependabot** opens weekly grouped updates for npm, Cargo and the workflow actions. Third-party actions are pinned to exact commits.
 - **Free minutes:** private repositories get 2,000 Actions minutes a month, and Windows minutes count double. Check Settings → Billing after the first few runs to see what a run costs. The Rust toolchain version for CI is set once at the top of each workflow (`RUST_VERSION`).

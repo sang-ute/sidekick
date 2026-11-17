@@ -1,9 +1,14 @@
 # Continuous integration: every pull request and every push to master.
 #
-#   checks   (Linux, cheap)  type check, lint the UI, UI tests, Rust formatting, workflow lint,
-#                            dependency audits
-#   windows  (Windows)       clippy, Rust unit + integration tests, build the app, end-to-end
-#                            tests against its real windows with a fake Claude Code
+# Five jobs, all started at once so a run takes about as long as the slowest one:
+#
+#   lint        Linux    type check, oxlint (UI + scripts), rustfmt, actionlint, npm + cargo audits
+#   ui-tests    Linux    Vitest: the three windows, markdown safety, the bridge to the Rust core
+#   clippy      Windows  Rust lint
+#   rust-tests  Windows  Rust unit tests + integration tests (MCP server, Claude Code bridge)
+#   e2e         Windows  build the app, drive its real windows with a fake Claude Code
+#
+# rust-tests and e2e build with the same features, so they share one build cache.
 name: CI
 
 on:
@@ -25,12 +30,14 @@ env:
   RUST_VERSION: "1.100.0" # bump together with your local toolchain
   NODE_VERSION: "22"
   CARGO_TERM_COLOR: always
+  # rust-tests and e2e: one feature set so they share compiled crates.
+  TEST_FEATURES: tauri/custom-protocol,test-support
 
 jobs:
-  checks:
-    name: Lint, types, UI tests, audits
+  lint:
+    name: Lint, types and audits
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -40,10 +47,8 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npm run typecheck
-      - name: Lint the UI (oxlint, type-aware)
+      - name: Lint the UI and scripts (oxlint, type-aware)
         run: npm run lint:ui
-      - name: UI unit and component tests (Vitest)
-        run: npm run test:ui
       - name: Rust ${{ env.RUST_VERSION }}
         run: |
           rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt
@@ -62,17 +67,48 @@ jobs:
       - name: Audit the Rust crates
         run: cargo audit --file src-tauri/Cargo.lock
 
-  windows:
-    name: Rust, integration and end-to-end tests (Windows)
-    needs: checks
+  ui-tests:
+    name: UI tests (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: UI unit and component tests
+        run: npm run test:ui
+
+  clippy:
+    name: Clippy (Windows)
     runs-on: windows-latest
-    timeout-minutes: 45
-    env:
-      # One feature set for clippy, tests and the e2e build, so they share compiled crates.
-      FEATURES: tauri/custom-protocol,test-support
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash # Git Bash; passes `--` through to cargo unchanged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: clippy
+      # Dev-mode features: no embedded UI needed, so no Node or Vite build here.
+      - name: Clippy (app, tests and the test-only fake Claude Code)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features test-support -- -D warnings
+
+  rust-tests:
+    name: Rust unit and integration tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -81,20 +117,44 @@ jobs:
           cache: npm
       - name: Rust ${{ env.RUST_VERSION }}
         run: |
-          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+          rustup toolchain install "$RUST_VERSION" --profile minimal
           rustup default "$RUST_VERSION"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
+          shared-key: windows-test-build
       - run: npm ci
       - name: Build the UI (embedded in the app)
         run: npm run vite:build
-      - name: Clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features "$FEATURES" -- -D warnings
       - name: Rust unit and integration tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --features "$FEATURES"
-      - name: Build the app for the end-to-end tests
-        run: cargo build --manifest-path src-tauri/Cargo.toml --features "$FEATURES"
+        run: cargo test --manifest-path src-tauri/Cargo.toml --features "$TEST_FEATURES"
+
+  e2e:
+    name: End-to-end tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: windows-test-build
+      - run: npm ci
+      - name: Build the UI (embedded in the app)
+        run: npm run vite:build
+      - name: Build the app under test
+        run: cargo build --manifest-path src-tauri/Cargo.toml --features "$TEST_FEATURES"
       - name: Make sure the WebView2 runtime is installed
         shell: pwsh
         run: |
