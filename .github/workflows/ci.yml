@@ -1,0 +1,208 @@
+# Continuous integration: every pull request and every push to master.
+#
+# All jobs start at once; the test suites are sharded across runners:
+#
+#   lint            Linux    type check, oxlint (UI + scripts), rustfmt, actionlint, npm + cargo audits
+#   ui-tests  x2    Linux    Vitest, split with --shard
+#   clippy          Windows  Rust lint
+#   rust-tests      Windows  Rust unit tests + integration tests (MCP server, Claude Code bridge)
+#   e2e       x3    Windows  build the app, drive its real windows with a fake Claude Code;
+#                            spec files are dealt round-robin to the shards
+#   required        Linux    passes only if lint, ui-tests, clippy and rust-tests passed. This is
+#                            the one check master's ruleset requires; e2e reports but doesn't block.
+#
+# rust-tests and e2e build with the same features, so they share one build cache.
+# To change a shard count, edit the `shard` list of that job; nothing else needs to change.
+name: CI
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ["**/*.md", "docs/**", "assets/**"]
+  # No path filter on pull requests: the required check must report on every PR.
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.100.0" # bump together with your local toolchain
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: always
+  # rust-tests and e2e: one feature set so they share compiled crates.
+  TEST_FEATURES: tauri/custom-protocol,test-support
+
+jobs:
+  lint:
+    name: Lint, types and audits
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint the UI and scripts (oxlint, type-aware)
+        run: npm run lint:ui
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt
+          rustup default "$RUST_VERSION"
+      - name: Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Lint the workflows (actionlint)
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+      - name: Audit the npm packages the app ships
+        run: npm audit --omit=dev --audit-level=high
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-audit
+      - name: Audit the Rust crates
+        run: cargo audit --file src-tauri/Cargo.lock
+
+  ui-tests:
+    name: UI tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: UI unit and component tests
+        run: npm run test:ui -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  clippy:
+    name: Clippy (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash # Git Bash; passes `--` through to cargo unchanged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: clippy
+      # Dev-mode features: no embedded UI needed, so no Node or Vite build here.
+      - name: Clippy (app, tests and the test-only fake Claude Code)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features test-support -- -D warnings
+
+  rust-tests:
+    name: Rust unit and integration tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: windows-test-build
+      - run: npm ci
+      - name: Build the UI (embedded in the app)
+        run: npm run vite:build
+      - name: Rust unit and integration tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --features "$TEST_FEATURES"
+
+  e2e:
+    name: End-to-end tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          shared-key: windows-test-build
+      - run: npm ci
+      - name: Build the UI (embedded in the app)
+        run: npm run vite:build
+      - name: Build the app under test
+        run: cargo build --manifest-path src-tauri/Cargo.toml --features "$TEST_FEATURES"
+      - name: Make sure the WebView2 runtime is installed
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          if (Test-Path $key) {
+            "WebView2 $((Get-ItemProperty $key).pv)"
+          } else {
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile "$env:RUNNER_TEMP\webview2.exe"
+            Start-Process "$env:RUNNER_TEMP\webview2.exe" -ArgumentList '/silent', '/install' -Wait
+          }
+      - name: End-to-end tests
+        run: npm run e2e -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+      - name: Keep the e2e results, screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts-shard-${{ matrix.shard }}
+          path: e2e-artifacts
+          retention-days: 7
+          if-no-files-found: ignore
+
+  required:
+    name: Required checks
+    if: always()
+    needs: [lint, ui-tests, clippy, rust-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Lint, UI tests, clippy and Rust tests all passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "lint, ui-tests, clippy, rust-tests: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::A required job did not pass ($r)."
+              exit 1
+            fi
+          done

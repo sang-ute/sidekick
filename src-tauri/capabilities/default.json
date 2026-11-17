@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What Sidekick's own windows may do. App commands are Sidekick's; nothing else (no file system, shell or HTTP access from the UI).",
+  "windows": ["mascot", "panel", "settings"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging"
+  ]
+}

@@ -1,0 +1,45 @@
+[package]
+name = "sidekick"
+version = "1.0.1"
+description = "A cute desktop mascot that runs on your own Claude Code"
+authors = ["sang-ute"]
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "sidekick_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-notification = "2.8.1"
+tauri-plugin-opener = "2.7.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["process", "time", "sync", "io-util", "macros", "rt-multi-thread"] }
+# native-tls = Windows' own TLS (Schannel): no bundled crypto, smaller binary
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls"] }
+regex = "1.13.1"
+chrono = "0.4.45"
+base64 = "0.23.1"
+
+[features]
+# Test builds only (integration and end-to-end tests): a stand-in for the Claude Code CLI,
+# built into this executable. Release builds never enable it.
+test-support = []
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

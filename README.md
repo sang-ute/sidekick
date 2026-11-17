@@ -9,13 +9,20 @@ and rings a bell when a reminder is due. Click it to chat.
 
 ![The mascot's moods: idle, handling a request, fetching data, answering, reminding, napping](docs/screenshots/mascot-moods.png)
 
+Built with **Tauri 2 (Rust)** and **React + TypeScript**: a ~2 MB installer, low memory use, and
+no local network port.
+
 ## Install
 
 Requirement: Claude Code installed and signed in (run `claude` in a terminal once).
 
-1. Download **Sidekick Setup <version>.exe** from [Releases](../../releases) (or build it with `npm run dist`) and run it. Windows SmartScreen may warn because the app isn't
-   code-signed: click **More info → Run anyway**.
+1. Download **Sidekick_<version>_x64-setup.exe** from [Releases](../../releases) and run it.
+   Windows SmartScreen may warn because the app isn't code-signed: click **More info → Run anyway**.
 2. Sidekick starts right away, and from then on at every Windows login.
+
+**Upgrading from 0.x:** uninstall the old Sidekick first (Windows Settings → Apps → Sidekick), so
+only one copy starts at login. Your tasks, reminders, notifications and settings carry over: 1.0
+uses the same data folder (`%APPDATA%\Sidekick`) and file formats.
 
 ## Use it
 
@@ -58,8 +65,8 @@ The chat window opens on **📌 Tasks**, a sticky-note board of things you need 
 
 - Add your own, tick them off, or remove them. Finished tasks fold away and are cleared after a week.
 - **🔄 Sync** asks Claude Code to check GitHub, Gmail and YouTube and pin anything that needs you,
-  with a link to open it. A sync also runs every day at `dailySyncTime` (default 08:30), or right
-  after login if the PC was off at that time.
+  with a link to open it. A sync also runs every day at the time set in Settings (default 08:30),
+  or right after login if the PC was off at that time.
 - Claude can manage the board from chat too: *"add a task to email my professor"*, *"what's on my plate?"*.
 - The mascot carries a little sticky note with your open-task count.
 
@@ -77,30 +84,33 @@ Sidekick never sends, deletes or changes anything unless you ask in the chat.
 
 ## Custom mascot
 
-Put an image named `mascot.png`, `mascot.gif` or `mascot.webp` (about 120×120, transparent background)
-in the data folder (right-click mascot → Open data folder) and restart. It gets the same hops, jumps
-and naps as the built-in one.
+Put an image named `mascot.png`, `mascot.gif` or `mascot.webp` (about 120×120, transparent background,
+up to 5 MB) in the data folder (right-click mascot → Open data folder) and restart. It gets the same
+hops, jumps and naps as the built-in one.
 
-## What starts at login
+## How it works
 
 ```
 Windows login
- └─ Sidekick.exe
-     ├─ local server  127.0.0.1:47821  (UI, chat stream, reminders; token-protected)
+ └─ Sidekick.exe  (Rust, Tauri 2)
+     ├─ core: chat history, notifications, task board, reminders (checked every 15 s), daily sync
      │    └─ claude -p  (your Claude Code login, one long-lived session)
-     │         ├─ sidekick MCP server  → reminders, task board, GitHub, YouTube
+     │         ├─ Sidekick.exe --mcp   → reminders, task board, GitHub, YouTube tools
      │         ├─ WebSearch, WebFetch
      │         └─ your claude.ai connectors (Gmail, Calendar, Drive… once authorized on claude.ai)
-     ├─ reminder scheduler (every 15s) → Windows notification + mascot speech bubble
-     └─ mascot window + chat window + tray icon
+     └─ windows (React + TypeScript in WebView2): mascot + notifier, chat, settings; tray icon
 ```
+
+The windows talk to the Rust core over Tauri's built-in IPC. There is no local web server, so no
+port that other programs or web pages could reach.
 
 ## Safety defaults
 
-- The server listens on `127.0.0.1` only, checks the `Host` header, and every API call needs a random
-  token created at each start, so web pages you visit can't drive Claude Code.
+- No network server; the UI can only call Sidekick's own commands (Tauri capabilities), not the
+  file system or shell. The content security policy only allows Sidekick's own scripts.
 - Claude Code gets only WebSearch and WebFetch as built-in tools: no shell, no file edits. Connector
-  tools are blocked until you allow them in the config.
+  tools are blocked until you allow them in Settings.
+- Links in chat, tasks and notifications open in your normal browser, never inside Sidekick.
 
 ## Config file
 
@@ -110,27 +120,69 @@ Editing the file by hand also works; Sidekick picks the change up within a coupl
 
 ## Develop
 
+Requirements: Node 22+, Rust 1.100 (via rustup) and the Microsoft C++ Build Tools with the Windows SDK.
+
 ```bash
 npm install
-npm start          # run from source
-npm run server     # just the local server; open the printed URL in any browser
-npm run dist       # build the installer into dist/
-npm run screenshots  # regenerate docs/screenshots (sample data; runs one short real chat)
+npm run dev        # run with hot reload (Vite + Tauri)
+npm run build      # release build + installer → src-tauri/target/release/bundle/nsis/
+npm run check      # everything CI runs: lint, types, unit, integration and end-to-end tests
+npm run format     # format the Rust code (rustfmt)
+npm run icon       # redraw the app icon and regenerate the Windows icons
 ```
 
-| File | Role |
+### Tests
+
+| Command | What it checks |
 |---|---|
-| `src/main.js` | Electron shell: mascot, chat and settings windows, tray, shortcut, theme, launch at login |
-| `src/server.js` | Local HTTP server: live event stream, settings, notifications, reminder scheduler, sync |
-| `src/config.js` | Settings defaults, choices and validation |
-| `src/claude.js` | Runs and talks to the Claude Code CLI (`stream-json` mode) |
-| `src/mcp-sidekick.js` | MCP tool server Claude Code launches: reminders, tasks, GitHub, YouTube |
-| `src/tasks.js` | Task board storage |
-| `src/integrations.js` | GitHub (via `gh`) and YouTube (RSS) readers |
-| `src/reminders.js` | Reminder storage shared by the two above |
-| `renderer/mascot.*` | The desktop mascot (SVG + CSS animations, moods) and the notifier |
-| `renderer/index.html`, `app.js` | Chat + task board UI, works in the app and in a browser tab |
-| `renderer/settings.*` | Settings dashboard |
+| `npm run lint` | UI and scripts with oxlint (type-aware, warnings fail); Rust with rustfmt and clippy |
+| `npm run typecheck` | TypeScript |
+| `npm run test:ui` | Vitest + Testing Library: the chat panel, mascot and settings windows, markdown safety, the bridge to the Rust core (faked with Tauri's own IPC mocks) |
+| `npm run test:rust` | Rust unit tests, plus integration tests that run the real `sidekick --mcp` server and the real Claude Code bridge against a fake Claude Code |
+| `npm run e2e:build`, then `npm run e2e` | End to end: a test copy of the app (its own data folder and WebView2 profile, a fake Claude Code) driven through its real windows. It also fails if any console or terminal window appears. Results, screenshots and logs go to `e2e-artifacts/`. It runs next to an installed Sidekick without touching it. Add `-- --real-claude` to use your signed-in Claude Code instead. |
+
+The fake Claude Code (`src-tauri/src/fake_claude.rs`) speaks Claude Code's stream-json protocol and calls Sidekick's real MCP server, so tests cover the whole chat → tool → task board → notification path without a login. It's behind the `test-support` Cargo feature: release builds never include it.
+
+### CI/CD
+
+All on GitHub Actions' free tier. Sidekick is a desktop app, so there's no server or cloud infrastructure to provision (and no Terraform).
+
+- **CI** (`.github/workflows/ci.yml`), on pull requests and pushes to `master`. All jobs start at once and the test suites are sharded, so a run takes about as long as the slowest shard:
+
+  | Job | Runner | What it runs |
+  |---|---|---|
+  | `lint` | Linux | Type check, oxlint, rustfmt, actionlint, and security audits of the npm packages and Rust crates the app ships |
+  | `ui-tests` ×2 | Linux | Vitest, split with `--shard` |
+  | `clippy` | Windows | Rust lint |
+  | `rust-tests` | Windows | Rust unit and integration tests |
+  | `e2e` ×3 | Windows | Builds the app and runs a third of the end-to-end specs (`npm run e2e -- --shard 2/3`); each shard uploads its own `e2e-artifacts` |
+  | `required` | Linux | Passes only if `lint`, every `ui-tests` shard, `clippy` and `rust-tests` passed |
+
+  `rust-tests` and `e2e` build with the same features and share one build cache. To change a shard count, edit that job's `shard` list.
+- **Required checks:** a ruleset on `master` requires the **Required checks** job to pass before a pull request can merge, and blocks force pushes and deleting `master`. End-to-end tests run on every PR and report their result, but don't block the merge.
+- **Release** (`.github/workflows/release.yml`): bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, then push a matching tag (`git tag v1.2.3 && git push origin v1.2.3`). It tests, builds the installer and creates a **draft** GitHub release with the installer and its SHA-256. You review and publish it.
+- **Dependabot** opens weekly grouped updates for npm, Cargo and the workflow actions. Third-party actions are pinned to exact commits.
+- **Cost:** the repository is public, so GitHub Actions minutes are free and unlimited. The Rust toolchain version for CI is set once at the top of each workflow (`RUST_VERSION`).
+
+| Path | Role |
+|---|---|
+| `src-tauri/src/core.rs` | Chat history, notification feed, sync, scheduler, file watching, settings, info |
+| `src-tauri/src/claude.rs` | Runs and talks to the Claude Code CLI (`stream-json` mode), system prompt |
+| `src-tauri/src/mcp.rs` | Sidekick's MCP tool server (`Sidekick.exe --mcp`, JSON-RPC over stdio) |
+| `src-tauri/src/shell.rs` | Windows, click-through, eye tracking, dragging, tray, menus, shortcut, autostart, theme |
+| `src-tauri/src/commands.rs` | Commands the UI calls |
+| `src-tauri/src/config.rs` | Settings defaults, choices and validation |
+| `src-tauri/src/store.rs` | Tasks and reminders storage |
+| `src-tauri/src/integrations.rs` | GitHub (via `gh`) and YouTube (RSS) readers |
+| `src/panel/` | Chat + task board window (React) |
+| `src/mascot/` | The mascot (SVG + CSS animations, moods) and the notifier (React) |
+| `src/settings/` | Settings window (React) |
+| `src/lib/` | Typed bridge to the Rust commands, live events, markdown, shared types |
+| `src-tauri/src/fake_claude.rs` | Stand-in Claude Code for tests (`test-support` feature only) |
+| `src-tauri/tests/` | Integration tests: MCP server, Claude Code bridge |
+| `src/**/*.test.ts(x)`, `src/test/` | UI tests and their fake Rust core |
+| `scripts/e2e/` | End-to-end runner, DevTools driver, window watcher, specs |
+| `.github/` | CI, release and Dependabot configuration |
 
 ## Roadmap
 
