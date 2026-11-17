@@ -179,6 +179,10 @@ try {
     timeout: 60000,
     what: "the app's windows (is WebView2 installed?)",
   });
+  // Ready means: the mascot and chat windows have loaded and the core answers.
+  await ctx.win("mascot");
+  await ctx.win("panel");
+  await waitFor(async () => (await ctx.invoke("hello")).config, { timeout: 30000, what: "the core to answer" });
   const specDir = join(here, "specs");
   // Spec files are dealt round-robin to the shards; each shard runs its own app instance.
   const files = readdirSync(specDir)

@@ -116,5 +116,15 @@ export async function connect(port, match, timeout = 20000) {
       ws.close();
     },
   };
+  // A window shows up in the DevTools list as soon as it starts loading. Wait until the page has
+  // loaded, Tauri's bridge is in place and React has rendered, so a test never talks to a
+  // half-loaded window (WebView2 starts slowly on a fresh CI machine).
+  await waitFor(
+    () =>
+      page.eval(
+        `document.readyState === "complete" && typeof window.__TAURI_INTERNALS__?.invoke === "function" && !!document.getElementById("root")?.firstElementChild`,
+      ),
+    { timeout, what: `${t.url} to finish loading` },
+  );
   return page;
 }
