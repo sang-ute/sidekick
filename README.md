@@ -147,20 +147,22 @@ The fake Claude Code (`src-tauri/src/fake_claude.rs`) speaks Claude Code's strea
 
 All on GitHub Actions' free tier. Sidekick is a desktop app, so there's no server or cloud infrastructure to provision (and no Terraform).
 
-- **CI** (`.github/workflows/ci.yml`), on pull requests and pushes to `master`. Five jobs start at once, so a run takes about as long as the slowest one:
+- **CI** (`.github/workflows/ci.yml`), on pull requests and pushes to `master`. All jobs start at once and the test suites are sharded, so a run takes about as long as the slowest shard:
 
   | Job | Runner | What it runs |
   |---|---|---|
   | `lint` | Linux | Type check, oxlint, rustfmt, actionlint, and security audits of the npm packages and Rust crates the app ships |
-  | `ui-tests` | Linux | Vitest |
+  | `ui-tests` ×2 | Linux | Vitest, split with `--shard` |
   | `clippy` | Windows | Rust lint |
   | `rust-tests` | Windows | Rust unit and integration tests |
-  | `e2e` | Windows | Builds the app and runs the end-to-end suite; `e2e-artifacts` are uploaded with every run |
+  | `e2e` ×3 | Windows | Builds the app and runs a third of the end-to-end specs (`npm run e2e -- --shard 2/3`); each shard uploads its own `e2e-artifacts` |
+  | `required` | Linux | Passes only if `lint`, every `ui-tests` shard, `clippy` and `rust-tests` passed |
 
-  `rust-tests` and `e2e` build with the same features and share one build cache.
+  `rust-tests` and `e2e` build with the same features and share one build cache. To change a shard count, edit that job's `shard` list.
+- **Required checks:** a ruleset on `master` requires the **Required checks** job to pass before a pull request can merge, and blocks force pushes and deleting `master`. End-to-end tests run on every PR and report their result, but don't block the merge.
 - **Release** (`.github/workflows/release.yml`): bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, then push a matching tag (`git tag v1.2.3 && git push origin v1.2.3`). It tests, builds the installer and creates a **draft** GitHub release with the installer and its SHA-256. You review and publish it.
 - **Dependabot** opens weekly grouped updates for npm, Cargo and the workflow actions. Third-party actions are pinned to exact commits.
-- **Free minutes:** private repositories get 2,000 Actions minutes a month, and Windows minutes count double. Check Settings → Billing after the first few runs to see what a run costs. The Rust toolchain version for CI is set once at the top of each workflow (`RUST_VERSION`).
+- **Cost:** the repository is public, so GitHub Actions minutes are free and unlimited. The Rust toolchain version for CI is set once at the top of each workflow (`RUST_VERSION`).
 
 | Path | Role |
 |---|---|

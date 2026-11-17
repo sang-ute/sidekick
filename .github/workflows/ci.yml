@@ -1,22 +1,26 @@
 # Continuous integration: every pull request and every push to master.
 #
-# Five jobs, all started at once so a run takes about as long as the slowest one:
+# All jobs start at once; the test suites are sharded across runners:
 #
-#   lint        Linux    type check, oxlint (UI + scripts), rustfmt, actionlint, npm + cargo audits
-#   ui-tests    Linux    Vitest: the three windows, markdown safety, the bridge to the Rust core
-#   clippy      Windows  Rust lint
-#   rust-tests  Windows  Rust unit tests + integration tests (MCP server, Claude Code bridge)
-#   e2e         Windows  build the app, drive its real windows with a fake Claude Code
+#   lint            Linux    type check, oxlint (UI + scripts), rustfmt, actionlint, npm + cargo audits
+#   ui-tests  x2    Linux    Vitest, split with --shard
+#   clippy          Windows  Rust lint
+#   rust-tests      Windows  Rust unit tests + integration tests (MCP server, Claude Code bridge)
+#   e2e       x3    Windows  build the app, drive its real windows with a fake Claude Code;
+#                            spec files are dealt round-robin to the shards
+#   required        Linux    passes only if lint, ui-tests, clippy and rust-tests passed. This is
+#                            the one check master's ruleset requires; e2e reports but doesn't block.
 #
 # rust-tests and e2e build with the same features, so they share one build cache.
+# To change a shard count, edit the `shard` list of that job; nothing else needs to change.
 name: CI
 
 on:
   push:
     branches: [master]
     paths-ignore: ["**/*.md", "docs/**", "assets/**"]
+  # No path filter on pull requests: the required check must report on every PR.
   pull_request:
-    paths-ignore: ["**/*.md", "docs/**", "assets/**"]
   workflow_dispatch:
 
 concurrency:
@@ -68,9 +72,13 @@ jobs:
         run: cargo audit --file src-tauri/Cargo.lock
 
   ui-tests:
-    name: UI tests (Vitest)
+    name: UI tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -79,7 +87,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: UI unit and component tests
-        run: npm run test:ui
+        run: npm run test:ui -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
   clippy:
     name: Clippy (Windows)
@@ -130,9 +138,13 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --features "$TEST_FEATURES"
 
   e2e:
-    name: End-to-end tests (Windows)
+    name: End-to-end tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: windows-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     defaults:
       run:
         shell: bash
@@ -166,12 +178,31 @@ jobs:
             Start-Process "$env:RUNNER_TEMP\webview2.exe" -ArgumentList '/silent', '/install' -Wait
           }
       - name: End-to-end tests
-        run: npm run e2e
+        run: npm run e2e -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Keep the e2e results, screenshots and logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: e2e-artifacts
+          name: e2e-artifacts-shard-${{ matrix.shard }}
           path: e2e-artifacts
           retention-days: 7
           if-no-files-found: ignore
+
+  required:
+    name: Required checks
+    if: always()
+    needs: [lint, ui-tests, clippy, rust-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Lint, UI tests, clippy and Rust tests all passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "lint, ui-tests, clippy, rust-tests: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::A required job did not pass ($r)."
+              exit 1
+            fi
+          done

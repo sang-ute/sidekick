@@ -11,6 +11,7 @@
 //   npm run e2e            # run every spec in scripts/e2e/specs
 //   node scripts/e2e/run.mjs --only chat --keep    # one spec, keep the app open afterwards
 //   node scripts/e2e/run.mjs --real-claude         # use your installed, signed-in Claude Code
+//   node scripts/e2e/run.mjs --shard 2/3           # every 3rd spec file, starting with the 2nd (CI)
 //
 // Results, screenshots of failures, the app log and the window log go to e2e-artifacts/.
 import assert from "node:assert/strict";
@@ -33,7 +34,13 @@ const opts = {
   only: value("--only"),
   keep: flag("--keep"),
   realClaude: flag("--real-claude"),
+  shard: value("--shard") || "1/1",
 };
+const [shardIndex, shardCount] = opts.shard.split("/").map(Number);
+if (!(shardCount >= 1 && shardIndex >= 1 && shardIndex <= shardCount)) {
+  console.error(`--shard should look like 2/3, got ${opts.shard}`);
+  process.exit(1);
+}
 const strictWindows = Boolean(process.env.CI); // on CI any new terminal window fails the run
 
 if (process.platform !== "win32") {
@@ -173,7 +180,12 @@ try {
     what: "the app's windows (is WebView2 installed?)",
   });
   const specDir = join(here, "specs");
-  const files = readdirSync(specDir).filter((f) => f.endsWith(".mjs") && (!opts.only || f.includes(opts.only))).toSorted();
+  // Spec files are dealt round-robin to the shards; each shard runs its own app instance.
+  const files = readdirSync(specDir)
+    .filter((f) => f.endsWith(".mjs") && (!opts.only || f.includes(opts.only)))
+    .toSorted()
+    .filter((_, i) => i % shardCount === shardIndex - 1);
+  if (shardCount > 1) console.log(`shard ${opts.shard}: ${files.join(", ")}\n`);
   for (const file of files) {
     const spec = file.replace(/^\d+-|\.mjs$/g, "");
     console.log(spec);
@@ -236,7 +248,7 @@ await record("whole run", "your real Sidekick data was not touched", () => {
 });
 
 const failed = results.filter((r) => !r.ok);
-writeFileSync(join(artifacts, "results.json"), JSON.stringify({ runId, version: pkg.version, results }, null, 2));
+writeFileSync(join(artifacts, "results.json"), JSON.stringify({ runId, version: pkg.version, shard: opts.shard, results }, null, 2));
 if (!opts.keep) rmSync(dataDir, { recursive: true, force: true });
 console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`);
 process.exit(failed.length ? 1 : 0);
